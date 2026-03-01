@@ -9,7 +9,7 @@ def train_one_epoch(model, dataloader, optimizer, criterion, device):
 
     total_loss = 0.0
 
-    for x, y in tqdm(dataloader, desc="Training", leave=False):
+    for x, y, _ in tqdm(dataloader, desc="Training", leave=False):
         x = x.to(device)
         y = y.to(device)
 
@@ -33,7 +33,7 @@ def validate(model, dataloader, criterion, device):
     total_loss = 0.0
 
     with torch.no_grad():
-        for x, y in tqdm(dataloader, desc="Validation", leave=False):
+        for x, y, _ in tqdm(dataloader, desc="Validation", leave=False):
             x = x.to(device)
             y = y.to(device)
 
