@@ -42,8 +42,7 @@ class GlobalLoadDataset(Dataset):
         x = series[start:end_input]
         y = series[end_input:end_output]
 
-        # reshape for LSTM: (seq_len, features=1)
         x = torch.tensor(x, dtype=torch.float32).unsqueeze(-1)
         y = torch.tensor(y, dtype=torch.float32)
 
-        return x, y
+        return x, y, household_index
