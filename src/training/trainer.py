@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from tqdm import tqdm
+import numpy as np
 
 
 def train_one_epoch(model, dataloader, optimizer, criterion, device):
@@ -43,3 +44,6 @@ def validate(model, dataloader, criterion, device):
             total_loss += loss.item() * x.size(0)
 
     return total_loss / len(dataloader.dataset)
+
+def compute_rmse(predictions, targets):
+    return np.sqrt(np.mean((predictions - targets) ** 2))
