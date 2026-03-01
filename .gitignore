@@ -44,6 +44,7 @@ data/processed/
 # =========================
 # Results / Models
 # =========================
+dev_checkpoints/
 results/
 *.pt
 *.pth
