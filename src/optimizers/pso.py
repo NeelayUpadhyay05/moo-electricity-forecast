@@ -42,7 +42,12 @@ class PSO:
     def optimize(self):
 
         # --- Initial evaluation ---
+        print("\n########## PSO Initial Evaluation ##########")
+
         for i in range(self.swarm_size):
+
+            print(f"\n---- Initial Particle {i+1}/{self.swarm_size} ----")
+            
             score = self.fitness_fn(self.positions[i])
             self.pbest_scores[i] = score
             self.pbest_positions[i] = self.positions[i]
@@ -52,9 +57,13 @@ class PSO:
                 self.gbest_position = self.positions[i].copy()
 
         # --- Main loop ---
-        for _ in range(self.iterations):
+        for iteration in range(self.iterations):
+
+            print(f"\n########## PSO Iteration {iteration+1}/{self.iterations} ##########")
 
             for i in range(self.swarm_size):
+
+                print(f"\n---- Particle {i+1}/{self.swarm_size} ----")
 
                 r1 = np.random.rand(self.dim)
                 r2 = np.random.rand(self.dim)
