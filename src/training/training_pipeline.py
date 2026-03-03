@@ -8,16 +8,20 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 import pandas as pd
 import numpy as np
+import os
 
 
-def train_single_configuration(train_df, val_df, device,
-                               hidden_dim, lr, dropout):
+def train_single_configuration(train_df, val_df, device, config):
 
     train_dataset = GlobalLoadDataset(train_df)
     val_dataset = GlobalLoadDataset(val_df)
 
-    train_loader = DataLoader(train_dataset, batch_size=512, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=512, shuffle=False)
+    train_loader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=config.batch_size, shuffle=False)
+
+    hidden_dim = config.hidden_dim
+    lr = config.lr
+    dropout = config.dropout
 
     model = LSTMModel(
         hidden_dim=hidden_dim,
@@ -27,13 +31,15 @@ def train_single_configuration(train_df, val_df, device,
     criterion = nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
+    os.makedirs(os.path.dirname(config.checkpoint_path), exist_ok=True)
+    
     early_stopper = EarlyStopping(
-        patience=5,
-        min_delta=1e-4,
-        save_path="dev_checkpoints/temp_best.pt"
+        patience=config.patience,
+        min_delta=config.min_delta,
+        save_path=config.checkpoint_path
     )
 
-    max_epochs = 15
+    max_epochs = config.epochs
     best_val_loss = float("inf")
 
     for epoch in range(max_epochs):
@@ -60,30 +66,59 @@ def train_single_configuration(train_df, val_df, device,
 
 
 def retrain_and_evaluate(train_df, val_df, test_df, device,
-                         hidden_dim, lr, dropout,
-                         scaling_params):
+                         config, scaling_params):
 
+    # --------------------------------------------------
+    # Combine Train + Validation
+    # --------------------------------------------------
     combined_df = pd.concat([train_df, val_df], axis=0)
 
     dataset = GlobalLoadDataset(combined_df)
-    dataloader = DataLoader(dataset, batch_size=512, shuffle=True)
+    dataloader = DataLoader(
+        dataset,
+        batch_size=config.batch_size,
+        shuffle=True
+    )
 
+    # --------------------------------------------------
+    # Build Model
+    # --------------------------------------------------
     model = LSTMModel(
-        hidden_dim=hidden_dim,
-        dropout=dropout
+        hidden_dim=config.hidden_dim,
+        dropout=config.dropout
     ).to(device)
 
     criterion = nn.MSELoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    optimizer = torch.optim.Adam(model.parameters(), lr=config.lr)
 
-    max_epochs = 15
+    # Ensure checkpoint directory exists
+    os.makedirs(os.path.dirname(config.checkpoint_path), exist_ok=True)
 
-    for _ in range(max_epochs):
-        train_one_epoch(model, dataloader, optimizer, criterion, device)
+    print(f"\n[Final Retraining] epochs={config.epochs}")
 
+    # --------------------------------------------------
+    # Fixed-Length Training (NO Early Stopping)
+    # --------------------------------------------------
+    for epoch in range(config.epochs):
+        train_loss = train_one_epoch(
+            model, dataloader, optimizer, criterion, device
+        )
+        print(f"Epoch {epoch+1:02d} | Train MSE: {train_loss:.6f}")
+
+    # Save FINAL trained model
+    torch.save(model.state_dict(), config.checkpoint_path)
+
+    # --------------------------------------------------
+    # Test Evaluation
+    # --------------------------------------------------
     test_dataset = GlobalLoadDataset(test_df)
-    test_loader = DataLoader(test_dataset, batch_size=512, shuffle=False)
+    test_loader = DataLoader(
+        test_dataset,
+        batch_size=config.batch_size,
+        shuffle=False
+    )
 
+    model.eval()
     all_squared_errors = []
     household_columns = train_df.columns.tolist()
 
@@ -105,4 +140,8 @@ def retrain_and_evaluate(train_df, val_df, test_df, device,
                 all_squared_errors.extend((pred_inv - target_inv) ** 2)
 
     rmse = np.sqrt(np.mean(all_squared_errors))
+
+    print(f"[Final Test RMSE]: {rmse:.4f}")
+    print(f"Model saved to: {config.checkpoint_path}")
+
     return float(rmse)

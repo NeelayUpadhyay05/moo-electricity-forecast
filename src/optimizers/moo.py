@@ -137,12 +137,27 @@ class MOOOptimizer:
     # Main Optimization Loop
     # -----------------------------
     def optimize(self):
-        population = self.initialize_population()
-        objectives = self.evaluate_population(population)
+        print("\n================ MOO Optimization Started ================")
+        print(f"Population Size: {self.pop_size}")
+        print(f"Generations: {self.generations}")
+        print("==========================================================")
 
+        population = self.initialize_population()
+
+        print("\nEvaluating Initial Population...")
+        objectives = self.evaluate_population(population)
         total_evals = self.pop_size
 
-        for _ in range(self.generations - 1):
+        fronts = self.non_dominated_sort(objectives)
+        print(f"Initial Pareto Front Size: {len(fronts[0])}")
+
+        # ==============================
+        # Main Generational Loop
+        # ==============================
+        for gen in range(1, self.generations):
+
+            print(f"\n########## Generation {gen+1}/{self.generations} ##########")
+
             offspring = []
 
             while len(offspring) < self.pop_size:
@@ -151,10 +166,12 @@ class MOOOptimizer:
                 offspring.append(child)
 
             offspring = np.array(offspring)
+
+            print("Evaluating Offspring...")
             offspring_objectives = self.evaluate_population(offspring)
             total_evals += self.pop_size
 
-            # Combine
+            # Combine parents + offspring
             combined_pop = np.vstack((population, offspring))
             combined_obj = np.vstack((objectives, offspring_objectives))
 
@@ -185,7 +202,17 @@ class MOOOptimizer:
             population = np.array(new_population)
             objectives = np.array(new_objectives)
 
-        # Final Pareto front
+            current_front = self.non_dominated_sort(objectives)[0]
+            best_val = min(objectives[current_front][:, 0])
+
+            print(f"Generation {gen+1} Complete")
+            print(f"Current Pareto Front Size: {len(current_front)}")
+            print(f"Best Validation MSE in Front: {best_val:.6f}")
+            print(f"Total Evaluations So Far: {total_evals}")
+
+        # ==============================
+        # Final Pareto Front
+        # ==============================
         final_front = self.non_dominated_sort(objectives)[0]
 
         pareto_solutions = []
@@ -197,5 +224,10 @@ class MOOOptimizer:
                     "complexity": objectives[idx][1],
                 }
             )
+
+        print("\n================ MOO Optimization Finished ================")
+        print(f"Final Pareto Front Size: {len(final_front)}")
+        print(f"Total Evaluations: {total_evals}")
+        print("============================================================")
 
         return pareto_solutions
