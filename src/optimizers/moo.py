@@ -151,6 +151,8 @@ class MOOOptimizer:
         fronts = self.non_dominated_sort(objectives)
         print(f"Initial Pareto Front Size: {len(fronts[0])}")
 
+        history = [float(min(objectives[:, 0]))]
+
         # ==============================
         # Main Generational Loop
         # ==============================
@@ -209,6 +211,7 @@ class MOOOptimizer:
             print(f"Current Pareto Front Size: {len(current_front)}")
             print(f"Best Validation MSE in Front: {best_val:.6f}")
             print(f"Total Evaluations So Far: {total_evals}")
+            history.append(float(best_val))
 
         # ==============================
         # Final Pareto Front
@@ -230,4 +233,4 @@ class MOOOptimizer:
         print(f"Total Evaluations: {total_evals}")
         print("============================================================")
 
-        return pareto_solutions
+        return pareto_solutions, history

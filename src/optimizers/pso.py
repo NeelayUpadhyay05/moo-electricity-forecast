@@ -41,13 +41,15 @@ class PSO:
 
     def optimize(self):
 
+        history = []
+
         # --- Initial evaluation ---
         print("\n########## PSO Initial Evaluation ##########")
 
         for i in range(self.swarm_size):
 
             print(f"\n---- Initial Particle {i+1}/{self.swarm_size} ----")
-            
+
             score = self.fitness_fn(self.positions[i])
             self.pbest_scores[i] = score
             self.pbest_positions[i] = self.positions[i]
@@ -55,6 +57,8 @@ class PSO:
             if score < self.gbest_score:
                 self.gbest_score = score
                 self.gbest_position = self.positions[i].copy()
+
+            history.append(self.gbest_score)
 
         # --- Main loop ---
         for iteration in range(self.iterations):
@@ -100,4 +104,6 @@ class PSO:
                     self.gbest_score = score
                     self.gbest_position = self.positions[i].copy()
 
-        return self.gbest_position, self.gbest_score
+                history.append(self.gbest_score)
+
+        return self.gbest_position, self.gbest_score, history
