@@ -1,7 +1,9 @@
-from src.data.dataset import GlobalLoadDataset
+from src.data.dataset import LoadDataset
 from src.models.lstm import LSTMModel
 from src.training.trainer import train_one_epoch, validate
 from src.training.early_stopping import EarlyStopping
+
+import sys
 
 import torch
 import torch.nn as nn
@@ -16,10 +18,10 @@ from torch import amp
 # ==========================================================
 # Hyperparameter Search Phase (with Early Stopping)
 # ==========================================================
-def train_single_configuration(train_df, val_df, device, config):
+def train_single_configuration(train_data, val_data, device, config):
 
-    train_dataset = GlobalLoadDataset(train_df)
-    val_dataset = GlobalLoadDataset(val_df)
+    train_dataset = LoadDataset(train_data, seq_len=config.seq_len)
+    val_dataset   = LoadDataset(val_data,   seq_len=config.seq_len)
 
     train_loader = DataLoader(
         train_dataset,
@@ -41,12 +43,9 @@ def train_single_configuration(train_df, val_df, device, config):
 
     model = LSTMModel(
         hidden_dim=config.hidden_dim,
-        num_layers=getattr(config, 'num_layers', 1),
-        dropout=config.dropout
+        num_layers=config.num_layers,
+        dropout=config.dropout,
     ).to(device)
-
-    if hasattr(torch, "compile"):
-        model = torch.compile(model)
 
     criterion = nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=config.lr)
@@ -59,11 +58,10 @@ def train_single_configuration(train_df, val_df, device, config):
     early_stopper = EarlyStopping(
         patience=config.search_patience,
         min_delta=config.min_delta,
-        save_path=config.checkpoint_path
+        save_path=config.checkpoint_path,
     )
 
     scaler = amp.GradScaler("cuda") if device.type == "cuda" else None
-    best_val_loss = float("inf")
 
     epoch_bar = tqdm(
         range(config.search_epochs),
@@ -73,16 +71,15 @@ def train_single_configuration(train_df, val_df, device, config):
         leave=True,
     )
 
-    for epoch in epoch_bar:
-
+    for _ in epoch_bar:
         train_loss = train_one_epoch(
             model, train_loader, optimizer, criterion, device, scaler,
         )
-
         val_loss = validate(model, val_loader, criterion, device)
 
-        best_val_loss = min(best_val_loss, val_loss)
-        epoch_bar.set_postfix({"val": f"{val_loss:.5f}", "best": f"{best_val_loss:.5f}"})
+        epoch_bar.set_postfix(
+            {"val": f"{val_loss:.5f}", "best": f"{early_stopper.best_loss:.5f}"}
+        )
 
         early_stopper.step(val_loss, model)
         scheduler.step()
@@ -91,18 +88,18 @@ def train_single_configuration(train_df, val_df, device, config):
             epoch_bar.set_description("  Search [stopped]")
             break
 
-    return best_val_loss
+    return early_stopper.best_loss
 
 
 # ==========================================================
 # Final Retraining Phase (NO Early Stopping)
 # ==========================================================
-def retrain_and_evaluate(train_df, val_df, test_df, device,
-                         config, scaling_params):
+def retrain_and_evaluate(train_data, val_data, test_data,
+                         device, config, scaling_params):
 
-    combined_df = pd.concat([train_df, val_df], axis=0)
+    combined = pd.concat([train_data, val_data])
 
-    dataset = GlobalLoadDataset(combined_df)
+    dataset = LoadDataset(combined, seq_len=config.seq_len)
     dataloader = DataLoader(
         dataset,
         batch_size=config.batch_size,
@@ -115,11 +112,13 @@ def retrain_and_evaluate(train_df, val_df, test_df, device,
 
     model = LSTMModel(
         hidden_dim=config.hidden_dim,
-        num_layers=getattr(config, 'num_layers', 1),
-        dropout=config.dropout
+        num_layers=config.num_layers,
+        dropout=config.dropout,
     ).to(device)
 
-    if hasattr(torch, "compile"):
+    # torch.compile speeds up the longer retrain run; skip on Windows where
+    # the Triton backend is unavailable and compilation adds pure overhead.
+    if sys.platform != "win32" and hasattr(torch, "compile"):
         model = torch.compile(model)
 
     criterion = nn.MSELoss()
@@ -142,23 +141,27 @@ def retrain_and_evaluate(train_df, val_df, test_df, device,
         leave=True,
     )
 
-    for epoch in epoch_bar:
+    best_train_loss = float("inf")
 
+    for _ in epoch_bar:
         train_loss = train_one_epoch(
             model, dataloader, optimizer, criterion, device, scaler,
         )
         scheduler.step()
 
-        epoch_bar.set_postfix({"train": f"{train_loss:.5f}"})
+        if train_loss < best_train_loss:
+            best_train_loss = train_loss
+            torch.save(model.state_dict(), config.checkpoint_path)
 
-    # Save final trained model
-    torch.save(model.state_dict(), config.checkpoint_path)
+        epoch_bar.set_postfix(
+            {"train": f"{train_loss:.5f}", "best": f"{best_train_loss:.5f}"}
+        )
 
     # -------------------------
     # Test Evaluation
     # -------------------------
-    test_dataset = GlobalLoadDataset(test_df)
-    test_loader = DataLoader(
+    test_dataset = LoadDataset(test_data, seq_len=config.seq_len)
+    test_loader  = DataLoader(
         test_dataset,
         batch_size=config.batch_size,
         shuffle=False,
@@ -167,44 +170,50 @@ def retrain_and_evaluate(train_df, val_df, test_df, device,
         persistent_workers=config.persistent_workers,
     )
 
+    model.load_state_dict(torch.load(config.checkpoint_path, map_location=device))
     model.eval()
-    all_squared_errors = []
-    all_abs_errors = []
-    all_target_values = []
-    household_columns = train_df.columns.tolist()
 
-    # Pre-compute scaling arrays once (avoids per-sample dict lookups)
-    _mins = np.array([scaling_params[col]["min"] for col in household_columns])
-    _maxs = np.array([scaling_params[col]["max"] for col in household_columns])
+    mean = scaling_params["mean"]
+    std  = scaling_params["std"]
+
+    all_norm_squared_errors = []
+    all_squared_errors      = []
+    all_abs_errors          = []
+    all_target_values       = []
 
     with torch.no_grad():
-        for x, y, household_idx in test_loader:
-
+        for x, y in test_loader:
             x = x.to(device)
 
-            outputs = model(x).cpu().numpy()   # (batch, 24)
-            targets = y.numpy()                # (batch, 24)
+            outputs = model(x).cpu().numpy()   # (batch,)
+            targets = y.numpy()                # (batch,)
 
-            h_idx  = household_idx.numpy()            # (batch,)
-            scale  = _maxs[h_idx] - _mins[h_idx]      # (batch,)
-            min_b  = _mins[h_idx]                      # (batch,)
+            # Normalized MSE — consistent with the val MSE search objective
+            all_norm_squared_errors.append((outputs - targets) ** 2)
 
-            pred_inv   = outputs * scale[:, None] + min_b[:, None]   # (batch, 24)
-            target_inv = targets * scale[:, None] + min_b[:, None]   # (batch, 24)
+            # Inverse z-score to recover original MW scale
+            pred_inv   = outputs * std + mean
+            target_inv = targets * std + mean
 
             all_squared_errors.append((pred_inv - target_inv) ** 2)
             all_abs_errors.append(np.abs(pred_inv - target_inv))
             all_target_values.append(np.abs(target_inv))
 
+    norm_sq = np.concatenate(all_norm_squared_errors)
     squared = np.concatenate(all_squared_errors)
     abs_err = np.concatenate(all_abs_errors)
     abs_tgt = np.concatenate(all_target_values)
 
-    rmse = float(np.sqrt(np.mean(squared)))
-    mae = float(np.mean(abs_err))
-    mape = float(np.mean(abs_err / np.clip(abs_tgt, 1e-8, None)) * 100)
+    nrmse = float(np.sqrt(np.mean(norm_sq)))
+    rmse  = float(np.sqrt(np.mean(squared)))
+    mae   = float(np.mean(abs_err))
+    # Floor denominator to avoid extreme percentages when targets are near zero
+    mape  = float(np.mean(abs_err / np.clip(abs_tgt, 1.0, None)) * 100)
 
-    print(f"[Final Test RMSE]: {rmse:.4f}  MAE: {mae:.4f}  MAPE: {mape:.2f}%")
+    print(
+        f"[Final Test]  NRMSE: {nrmse:.6f}  "
+        f"RMSE: {rmse:.4f} MW  MAE: {mae:.4f} MW  MAPE: {mape:.2f}%"
+    )
     print(f"Model saved to: {config.checkpoint_path}")
 
-    return {"rmse": rmse, "mae": mae, "mape": mape}
+    return {"nrmse": nrmse, "rmse": rmse, "mae": mae, "mape": mape}

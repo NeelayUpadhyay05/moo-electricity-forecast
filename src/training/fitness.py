@@ -15,7 +15,7 @@ def pso_fitness(particle, train_df, val_df, device, mode):
 
     config.hidden_dim  = int(np.clip(np.round(particle[0]), b["hidden_dim"][0], b["hidden_dim"][1]))
     config.num_layers  = int(np.clip(np.round(particle[1]), b["num_layers"][0], b["num_layers"][1]))
-    config.lr          = float(np.clip(particle[2], b["lr"][0], b["lr"][1]))
+    config.lr          = float(np.clip(10 ** particle[2], b["lr"][0], b["lr"][1]))
     config.dropout     = float(np.clip(particle[3], b["dropout"][0], b["dropout"][1]))
 
     print("\n" + "="*50)
@@ -52,7 +52,7 @@ def moo_fitness(particle, train_df, val_df, device, mode):
 
     config.hidden_dim  = int(np.clip(np.round(particle[0]), b["hidden_dim"][0], b["hidden_dim"][1]))
     config.num_layers  = int(np.clip(np.round(particle[1]), b["num_layers"][0], b["num_layers"][1]))
-    config.lr          = float(np.clip(particle[2], b["lr"][0], b["lr"][1]))
+    config.lr          = float(np.clip(10 ** particle[2], b["lr"][0], b["lr"][1]))
     config.dropout     = float(np.clip(particle[3], b["dropout"][0], b["dropout"][1]))
 
     print("\n--- Evaluating New MOO Candidate ---")

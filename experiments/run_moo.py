@@ -22,11 +22,13 @@ from src.config import Config
 # ==========================================================
 # Result Saving
 # ==========================================================
-def save_results(out_dir, runtime, val_mse, test_metrics, best_hyperparams, convergence):
-    os.makedirs(out_dir, exist_ok=True)
+def save_results(out_dir, runtime, val_mse, test_metrics, best_hyperparams, convergence, seed, mode):
     result = {
+        "seed": seed,
+        "mode": mode,
         "runtime_s": round(runtime, 2),
         "best_val_mse": float(val_mse),
+        "best_test_nrmse": float(test_metrics["nrmse"]),
         "best_test_rmse": float(test_metrics["rmse"]),
         "best_test_mae": float(test_metrics["mae"]),
         "best_test_mape": float(test_metrics["mape"]),
@@ -41,35 +43,21 @@ def save_results(out_dir, runtime, val_mse, test_metrics, best_hyperparams, conv
 # ==========================================================
 # Data Loading (Mode Aware)
 # ==========================================================
-def load_data(config):
+def load_data(config, zone="PJME"):
 
-    train_df = pd.read_csv(
-        "data/processed/electricity_train.csv",
-        index_col=0,
-        parse_dates=True
-    )
-    val_df = pd.read_csv(
-        "data/processed/electricity_val.csv",
-        index_col=0,
-        parse_dates=True
-    )
-    test_df = pd.read_csv(
-        "data/processed/electricity_test.csv",
-        index_col=0,
-        parse_dates=True
-    )
+    base = f"data/processed/{zone}"
+    train_df = pd.read_csv(f"{base}_train.csv", index_col=0, parse_dates=True)
+    val_df   = pd.read_csv(f"{base}_val.csv",   index_col=0, parse_dates=True)
+    test_df  = pd.read_csv(f"{base}_test.csv",  index_col=0, parse_dates=True)
 
-    with open("data/processed/electricity_scaling.json") as f:
+    with open(f"{base}_scaling.json") as f:
         scaling_params = json.load(f)
 
     if config.mode == "dev":
-        print("\n[DEV MODE ACTIVE]")
-        print(f"Using first {config.dev_households} households")
-        print(f"Using first {config.dev_timesteps} timesteps")
-
-        train_df = train_df.iloc[:config.dev_timesteps, :config.dev_households]
-        val_df = val_df.iloc[:config.dev_timesteps, :config.dev_households]
-        test_df = test_df.iloc[:config.dev_timesteps, :config.dev_households]
+        print(f"\n[DEV MODE ACTIVE] zone={zone}, timesteps={config.dev_timesteps}")
+        train_df = train_df.iloc[:config.dev_timesteps]
+        val_df   = val_df.iloc[:config.dev_timesteps]
+        test_df  = test_df.iloc[:config.dev_timesteps]
 
     return train_df, val_df, test_df, scaling_params
 
@@ -77,13 +65,19 @@ def load_data(config):
 # ==========================================================
 # MOO
 # ==========================================================
-def run_moo(train_df, val_df, test_df, scaling_params, device, config, seed=42):
+def run_moo(train_df, val_df, test_df, scaling_params, device, config, seed=42, zone="PJME"):
 
+    set_seed(seed)
     print("\n================ MOO =================")
     start = time.time()
 
     b = config.hp_bounds
-    bounds = [tuple(b["hidden_dim"]), tuple(b["num_layers"]), tuple(b["lr"]), tuple(b["dropout"])]
+    bounds = [
+        tuple(b["hidden_dim"]),
+        (b["num_layers"][0] - 0.5, b["num_layers"][1] + 0.5),  # ±0.5 offset: equal probability for each integer after round+clip
+        (np.log10(b["lr"][0]), np.log10(b["lr"][1])),
+        tuple(b["dropout"]),
+    ]
 
     moo = MOOOptimizer(
         fitness_fn=lambda particle: moo_fitness(
@@ -96,47 +90,48 @@ def run_moo(train_df, val_df, test_df, scaling_params, device, config, seed=42):
     )
 
     pareto_solutions, history = moo.optimize()
+
+    # Build Pareto front metadata from search phase (no extra training yet)
     evaluated = []
-
     for solution in pareto_solutions:
-
         hidden_dim, num_layers, lr, dropout = solution["params"]
-
-        sol_config = Config(mode=config.mode)
-        sol_config.hidden_dim = int(np.round(hidden_dim))
-        sol_config.num_layers = int(np.round(num_layers))
-        sol_config.lr = float(lr)
-        sol_config.dropout = float(dropout)
-        sol_config.checkpoint_path = f"checkpoints/seed_{seed}/moo_h{sol_config.hidden_dim}_l{sol_config.num_layers}.pt"
-
-        os.makedirs(os.path.dirname(sol_config.checkpoint_path), exist_ok=True)
-
-        test_metrics = retrain_and_evaluate(
-            train_df, val_df, test_df,
-            device, sol_config, scaling_params
-        )
-
         evaluated.append({
-            "val_mse": solution["val_mse"],
+            "val_mse":    solution["val_mse"],
             "complexity": solution["complexity"],
-            "test_rmse": test_metrics["rmse"],
-            "test_mae": test_metrics["mae"],
-            "test_mape": test_metrics["mape"],
             "hyperparams": {
-                "hidden_dim": sol_config.hidden_dim,
-                "num_layers": sol_config.num_layers,
-                "lr": sol_config.lr,
-                "dropout": sol_config.dropout,
+                "hidden_dim": int(np.round(hidden_dim)),
+                "num_layers": int(np.round(num_layers)),
+                "lr":         float(10 ** lr),
+                "dropout":    float(dropout),
             },
         })
 
+    # Select best Pareto solution by validation MSE
+    best_val_solution = min(evaluated, key=lambda x: x["val_mse"])
+    best_hp = best_val_solution["hyperparams"]
+
+    # Retrain only the best solution — same single retrain as every other method
+    best_config = Config(mode=config.mode)
+    best_config.hidden_dim = best_hp["hidden_dim"]
+    best_config.num_layers = best_hp["num_layers"]
+    best_config.lr         = best_hp["lr"]
+    best_config.dropout    = best_hp["dropout"]
+    best_config.checkpoint_path = f"checkpoints/seed_{seed}/{zone}/moo_best.pt"
+
+    os.makedirs(os.path.dirname(best_config.checkpoint_path), exist_ok=True)
+
+    test_metrics = retrain_and_evaluate(
+        train_df, val_df, test_df,
+        device, best_config, scaling_params
+    )
+
     runtime = time.time() - start
 
-    best_val_solution  = min(evaluated, key=lambda x: x["val_mse"])
-    best_test_solution = min(evaluated, key=lambda x: x["test_rmse"])
-
-    out_dir = f"results/seed_{seed}/moo"
+    out_dir = f"results/seed_{seed}/{zone}/moo"
     os.makedirs(out_dir, exist_ok=True)
+
+    # Save Pareto front (val_mse / complexity only — test metrics intentionally
+    # omitted for non-winning solutions to avoid extra training budget)
     pareto_rows = [
         {
             "hidden_dim": e["hyperparams"]["hidden_dim"],
@@ -145,7 +140,6 @@ def run_moo(train_df, val_df, test_df, scaling_params, device, config, seed=42):
             "dropout":    e["hyperparams"]["dropout"],
             "val_mse":    float(e["val_mse"]),
             "complexity": float(e["complexity"]),
-            "test_rmse":  float(e["test_rmse"]),
         }
         for e in evaluated
     ]
@@ -153,23 +147,20 @@ def run_moo(train_df, val_df, test_df, scaling_params, device, config, seed=42):
         os.path.join(out_dir, "pareto_front.csv"), index=False
     )
 
-    best_test_metrics = {
-        "rmse": best_test_solution["test_rmse"],
-        "mae": best_test_solution["test_mae"],
-        "mape": best_test_solution["test_mape"],
-    }
     save_results(
         out_dir=out_dir,
         runtime=runtime,
         val_mse=best_val_solution["val_mse"],
-        test_metrics=best_test_metrics,
-        best_hyperparams=best_val_solution["hyperparams"],
+        test_metrics=test_metrics,
+        best_hyperparams=best_hp,
         convergence=history,
+        seed=seed,
+        mode=config.mode,
     )
 
     return (
         best_val_solution["val_mse"],
-        best_test_solution["test_rmse"],
+        test_metrics["nrmse"],
         runtime
     )
 
@@ -182,24 +173,22 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--mode", type=str, default="full", choices=["dev", "full"])
+    parser.add_argument("--zone", type=str, default="PJME")
     args = parser.parse_args()
 
     set_seed(args.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    if torch.cuda.is_available():
-        torch.backends.cudnn.benchmark = True
-
     config = Config(mode=args.mode)
-    train_df, val_df, test_df, scaling_params = load_data(config)
+    train_df, val_df, test_df, scaling_params = load_data(config, zone=args.zone)
 
     val_mse, test_rmse, runtime = run_moo(
-        train_df, val_df, test_df, scaling_params, device, config, seed=args.seed
+        train_df, val_df, test_df, scaling_params, device, config, seed=args.seed, zone=args.zone
     )
 
-    print(f"\n{'Method':<15}{'Val MSE':<15}{'Test RMSE':<15}{'Time (s)':<15}")
+    print(f"\n{'Method':<15}{'Val MSE':<15}{'Test NRMSE':<15}{'Time (s)':<15}")
     print("-" * 60)
-    print(f"{'MOO':<15}{val_mse:<15.6f}{test_rmse:<15.4f}{runtime:<15.2f}")
+    print(f"{'MOO':<15}{val_mse:<15.6f}{test_rmse:<15.6f}{runtime:<15.2f}")
 
 
 if __name__ == "__main__":

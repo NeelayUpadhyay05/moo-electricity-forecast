@@ -240,13 +240,19 @@ class MOOOptimizer:
         population = self.initialize_population()
 
         print("\nEvaluating Initial Population...")
-        objectives = self.evaluate_population(population)
+        objectives_list = []
+        history = []
+        best_so_far = float("inf")
+        for individual in population:
+            obj = self.fitness_fn(individual)
+            objectives_list.append(obj)
+            best_so_far = min(best_so_far, obj[0])
+            history.append(best_so_far)
+        objectives = np.array(objectives_list)
         total_evals = self.pop_size
 
         fronts, ranks, crowding_dists = self.compute_ranks_and_crowding(objectives)
         print(f"Initial Pareto Front Size: {len(fronts[0])}")
-
-        history = [float(min(objectives[:, 0]))]
 
         # ==============================
         # Main Generational Loop
@@ -270,7 +276,13 @@ class MOOOptimizer:
             offspring = np.array(offspring)
 
             print("Evaluating Offspring...")
-            offspring_objectives = self.evaluate_population(offspring)
+            offspring_objectives_list = []
+            for individual in offspring:
+                obj = self.fitness_fn(individual)
+                offspring_objectives_list.append(obj)
+                best_so_far = min(best_so_far, obj[0])
+                history.append(best_so_far)
+            offspring_objectives = np.array(offspring_objectives_list)
             total_evals += self.pop_size
 
             # Combine parents + offspring
@@ -313,7 +325,6 @@ class MOOOptimizer:
             print(f"Current Pareto Front Size: {len(fronts[0])}")
             print(f"Best Validation MSE in Front: {best_val:.6f}")
             print(f"Total Evaluations So Far: {total_evals}")
-            history.append(float(best_val))
 
         # ==============================
         # Final Pareto Front

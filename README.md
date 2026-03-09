@@ -1,42 +1,92 @@
-# Hyperparameter Optimization for LSTM-Based Electricity Load Forecasting
+# Multi-Objective Hyperparameter Optimization for LSTM-Based Electricity Load Forecasting
 
-A comparison of hyperparameter optimization methods for a global LSTM forecasting model trained on the [ElectricityLoadDiagrams20112014](https://archive.ics.uci.edu/dataset/321/electricityloaddiagrams20112014) dataset.
+A systematic comparison of hyperparameter optimization (HPO) methods applied to an LSTM model for univariate electricity load forecasting. The core contribution is a **multi-objective optimization (MOO) approach using NSGA-II** that jointly minimizes validation error and model complexity, evaluated against four competing methods under a strictly equal function-evaluation budget.
 
-Four methods are compared under an equal function-evaluation budget:
+---
+
+## Contribution
+
+Standard HPO treats model selection as a single-objective problem (minimize validation loss). This work frames it as a **Pareto optimization problem** — simultaneously minimizing:
+
+1. **Validation MSE** — forecasting accuracy
+2. **Model complexity** — number of trainable parameters (proxy for overfitting risk and inference cost)
+
+The Pareto front produced by MOO surfaces configurations that no single-objective method can explore by design. The selected solution from the front is compared against the best configurations found by four baselines under identical evaluation budgets.
+
+---
+
+## Methods Compared
 
 | Method | Description |
 |--------|-------------|
-| Baseline | Fixed default hyperparameters (hidden\_dim=128, lr=0.001, dropout=0.0) |
-| Random Search | Uniform random sampling over the hyperparameter space |
-| PSO | Particle Swarm Optimization (single-objective, minimizes validation MSE) |
-| MOO | Multi-objective optimizer (NSGA-II variant); minimizes validation MSE and model complexity jointly |
+| Baseline | Fixed default hyperparameters — no search |
+| Random Search | Uniform random sampling over the search space |
+| PSO | Particle Swarm Optimization — single-objective, minimizes validation MSE |
+| Optuna | Bayesian optimization via TPE sampler (single-objective) |
+| **MOO** | **NSGA-II — multi-objective, minimizes validation MSE and complexity jointly** |
+
+All search methods operate under an **equal function-evaluation budget** (30 evaluations in full mode) to ensure fair comparison.
 
 ---
 
 ## Dataset
 
-**ElectricityLoadDiagrams20112014** — 370 Portuguese households, 15-minute resolution, 2011–2014.
+**PJM Hourly Energy Consumption** — real-world hourly electricity load (MW) from PJM Interconnection, a US regional transmission organization.
 
-- Source: UCI ML Repository
-- Raw file: `data/raw/LD2011_2014.txt` (not tracked by git — download separately)
-- Preprocessing: leading-zero imputation → hourly aggregation → chronological split → 100-household selection → per-household min-max normalization
+- Source: [Kaggle — Rob Mulla](https://www.kaggle.com/datasets/robikscube/hourly-energy-consumption)
+- Raw files: `data/raw/PJM/` (not tracked by git)
+- Format: two columns — `Datetime` and `{ZONE}_MW`
+- Frequency: hourly (1H)
+- Target: univariate load (MW), no exogenous features
 
-| Split | Period | Hours |
-|-------|--------|-------|
-| Train | 2011-01-01 – 2013-12-31 | ~26,280 |
-| Val   | 2014-01-01 – 2014-06-30 | ~4,344  |
-| Test  | 2014-07-01 – 2014-12-31 | ~4,416  |
+| Zone | Rows | Span | MW Range |
+|------|------|------|----------|
+| PJME | 145,366 | 2002–2018 | 14,544–62,009 |
+| AEP  | 121,273 | 2004–2018 | 9,581–25,695  |
+| DAYTON | 121,275 | 2004–2018 | 982–3,746   |
+| DUQ  | 119,068 | 2005–2018 | 1,014–3,054  |
+
+Experiments are run independently on each zone; results are reported per-zone to demonstrate consistency across different load scales and regional profiles.
+
+**Train / Val / Test split** (chronological, no shuffling):
+
+| Split | Proportion | Purpose |
+|-------|-----------|---------|
+| Train | 70% | LSTM training and HPO fitness evaluation |
+| Val   | 15% | HPO objective (validation MSE) |
+| Test  | 15% | Final held-out evaluation — never seen during HPO |
 
 ---
 
 ## Model
 
-**Global LSTM** — a single model trained across all 100 households simultaneously.
+**Univariate LSTM** — a single-layer or multi-layer LSTM trained on a sliding window of past load values to forecast the next step.
 
-- Input: 24-hour window of normalized load values `(batch, 24, 1)`
-- Output: next 24-hour forecast `(batch, 24)`
-- Hyperparameters searched: `hidden_dim` ∈ [32, 256], `lr` ∈ [1e-4, 5e-3], `dropout` ∈ [0.0, 0.3]
-- Training uses cosine annealing LR schedule and early stopping
+- Input: sequence of `seq_len=24` hourly observations `(batch, 24, 1)`
+- Output: single next-hour forecast `(batch, 1)`
+- Normalization: z-score (mean/std computed on training split only)
+- Training: cosine annealing LR schedule + early stopping on validation MSE
+
+**Hyperparameter search space (4D):**
+
+| Hyperparameter | Range | Type |
+|---|---|---|
+| `hidden_dim` | [32, 256] | Integer |
+| `num_layers` | [1, 3] | Integer |
+| `lr` | [1e-4, 5e-3] | Continuous (log scale) |
+| `dropout` | [0.0, 0.3] | Continuous |
+
+---
+
+## Evaluation Metrics
+
+All methods are evaluated on the held-out test set using the model retrained with the best hyperparameters found during search:
+
+| Metric | Description |
+|---|---|
+| MSE | Mean Squared Error |
+| MAE | Mean Absolute Error |
+| MAPE | Mean Absolute Percentage Error |
 
 ---
 
@@ -45,30 +95,56 @@ Four methods are compared under an equal function-evaluation budget:
 ```
 MOO-Electricity-Forecast/
 ├── data/
-│   ├── raw/                        # raw dataset (not tracked)
-│   └── processed/                  # preprocessed CSVs and scaling JSON
-├── checkpoints/                    # saved model weights
-├── results/                        # JSON metrics from each method
+│   ├── raw/
+│   │   └── PJM/                        # raw CSVs (not tracked by git)
+│   │       ├── PJME_hourly.csv
+│   │       ├── AEP_hourly.csv
+│   │       ├── DAYTON_hourly.csv
+│   │       └── ...
+│   └── processed/                      # preprocessed splits per zone
+│       ├── {zone}_train.csv
+│       ├── {zone}_val.csv
+│       ├── {zone}_test.csv
+│       └── {zone}_scaling.json
+├── checkpoints/                        # saved model weights per seed/method
+│   └── seed_{n}/
+├── results/                            # JSON metrics and search histories
+│   └── seed_{n}/
+│       ├── baseline/metrics.json
+│       ├── random_search/metrics.json
+│       ├── pso/metrics.json
+│       ├── optuna/metrics.json
+│       └── moo/
+│           ├── metrics.json
+│           └── pareto_front.csv
+├── experiments/
+│   ├── run_baseline.py                 # fixed-config baseline
+│   ├── run_random_search.py            # random search
+│   ├── run_pso.py                      # PSO
+│   ├── run_optuna.py                   # Optuna (TPE)
+│   └── run_moo.py                      # MOO (NSGA-II)
 ├── src/
-│   ├── config.py                   # all hyperparameters and mode-specific settings
+│   ├── config.py                       # all hyperparameters and mode settings
 │   ├── models/
-│   │   └── lstm.py                 # LSTM model definition
+│   │   └── lstm.py                     # LSTM model definition
 │   ├── data/
-│   │   ├── dataset.py              # PyTorch Dataset (sliding window)
-│   │   ├── preprocess.py           # preprocessing functions
-│   │   └── run_preprocessing.py    # preprocessing entry point
+│   │   ├── dataset.py                  # PyTorch Dataset (sliding window)
+│   │   ├── preprocess.py               # PJM preprocessing pipeline
+│   │   └── run_preprocessing.py        # preprocessing entry point
 │   ├── optimizers/
-│   │   ├── pso.py                  # Particle Swarm Optimization
-│   │   └── moo.py                  # Multi-objective optimizer (NSGA-II)
+│   │   ├── pso.py                      # Particle Swarm Optimization
+│   │   └── moo.py                      # NSGA-II multi-objective optimizer
 │   ├── training/
-│   │   ├── trainer.py              # train_one_epoch / validate
-│   │   ├── training_pipeline.py    # train_single_configuration / retrain_and_evaluate
-│   │   ├── fitness.py              # PSO and MOO fitness functions
-│   │   ├── early_stopping.py       # early stopping with checkpoint saving
-│   │   └── experiment_runner.py    # main experiment loop
+│   │   ├── trainer.py                  # train_one_epoch / validate
+│   │   ├── training_pipeline.py        # train_single_configuration / retrain_and_evaluate
+│   │   ├── fitness.py                  # fitness functions for PSO and MOO
+│   │   ├── early_stopping.py           # early stopping with checkpoint saving
+│   │   └── experiment_runner.py        # orchestrates all methods
 │   └── utils/
-│       └── seed.py                 # reproducibility seed setter
-└── main.py                         # entry point
+│       └── seed.py                     # reproducibility (Python, NumPy, PyTorch)
+├── main.py                             # entry point
+├── requirements.txt
+└── README.md
 ```
 
 ---
@@ -79,59 +155,66 @@ MOO-Electricity-Forecast/
 pip install -r requirements.txt
 ```
 
-Download the raw dataset from UCI and place it at `data/raw/LD2011_2014.txt`.
+Download PJM CSV files from Kaggle and place them in `data/raw/PJM/`.
 
 ---
 
 ## Preprocessing
 
-Run once to generate the processed data files:
+Run once per zone to generate the processed splits:
 
 ```bash
-python -m src.data.run_preprocessing
+python -m src.data.run_preprocessing --zone PJME
 ```
 
 This produces:
-- `data/processed/electricity_train.csv`
-- `data/processed/electricity_val.csv`
-- `data/processed/electricity_test.csv`
-- `data/processed/electricity_scaling.json`
-- `data/processed/selected_households.json`
+- `data/processed/PJME_train.csv`
+- `data/processed/PJME_val.csv`
+- `data/processed/PJME_test.csv`
+- `data/processed/PJME_scaling.json`
 
 ---
 
 ## Running Experiments
 
+Run all methods sequentially:
+
 ```bash
 python main.py
 ```
 
-By default runs in `mode="full"` (100 households, 50 epochs, full optimizer budgets). Edit `src/training/experiment_runner.py` to enable/disable individual methods.
+Or run individual methods:
 
-**Dev mode** (10 households, 2 epochs, minimal budgets — for quick testing):
-
-```python
-# In experiment_runner.py main():
-config = Config(mode="dev")
+```bash
+python experiments/run_baseline.py
+python experiments/run_random_search.py
+python experiments/run_pso.py
+python experiments/run_optuna.py
+python experiments/run_moo.py
 ```
 
-### Mode comparison
+### Dev vs Full mode
 
 | Setting | Dev | Full |
 |---------|-----|------|
-| Households | 10 | 100 |
 | Batch size | 512 | 2048 |
-| Search epochs (HPO) | 10 (+ early stop, patience 3) | 20 (+ early stop, patience 5) |
-| Retrain epochs (final) | 15 | 60 |
-| LR | 0.001 | 0.004 |
-| DataLoader workers | 0 | 4 |
+| Search epochs (per eval) | 10 + early stop (patience 3) | 20 + early stop (patience 5) |
+| Retrain epochs | 15 | 60 |
 | Eval budget (all methods) | 12 | 30 |
 | Random trials | 12 | 30 |
 | PSO swarm / iterations | 4 / 2 | 6 / 4 |
-| MOO pop / generations | 4 / 2 | 6 / 4 |
+| MOO population / generations | 4 / 2 | 6 / 4 |
+
+Dev mode is for rapid iteration and debugging. Full mode is used for all reported results.
 
 ---
 
 ## Reproducibility
 
-All experiments seed Python, NumPy, and PyTorch via `set_seed(42)`. CuDNN deterministic mode is enabled in `seed.py`; `benchmark=True` is re-enabled in `experiment_runner.py` for throughput.
+All experiments seed Python, NumPy, and PyTorch via `set_seed(seed)`. Default seed is 42. CuDNN deterministic mode is enabled. Results are saved per-seed under `results/seed_{n}/` and `checkpoints/seed_{n}/`.
+
+---
+
+## License
+
+MIT

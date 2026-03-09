@@ -3,46 +3,41 @@ import torch
 from torch.utils.data import Dataset
 
 
-class GlobalLoadDataset(Dataset):
-    def __init__(self, dataframe, input_window=24, output_window=24):
-        """
-        Global multi-series dataset.
-        Each sample corresponds to one household window.
-        """
+class LoadDataset(Dataset):
+    """
+    Univariate sliding-window dataset for a single time series.
 
-        self.data = dataframe.values  # shape: (time_steps, n_households)
-        self.input_window = input_window
-        self.output_window = output_window
+    Each sample:
+        x : (seq_len, 1)  — normalized load values for the past seq_len hours
+        y : scalar        — normalized load for the next hour (t + seq_len)
 
-        self.time_steps = self.data.shape[0]
-        self.n_households = self.data.shape[1]
+    Args:
+        series  : pd.Series or np.ndarray of normalized load values
+        seq_len : number of past time steps used as input (default: 24)
+    """
 
-        self.window_size = self.input_window + self.output_window
+    def __init__(self, series, seq_len: int = 24):
+        if hasattr(series, "values"):
+            data = series.values.astype(np.float32)
+        else:
+            data = np.asarray(series, dtype=np.float32)
 
-        # number of valid windows per household
-        self.samples_per_household = self.time_steps - self.window_size + 1
+        # Support both pd.Series (1-D) and single-column pd.DataFrame (2-D)
+        if data.ndim > 1:
+            data = data.squeeze(axis=1)
 
-        # total samples across all households
-        self.total_samples = self.samples_per_household * self.n_households
+        self.data      = data
+        self.seq_len   = seq_len
+        self.n_samples = len(data) - seq_len  # each window predicts one step ahead
 
     def __len__(self):
-        return self.total_samples
+        return self.n_samples
 
     def __getitem__(self, idx):
+        x = self.data[idx : idx + self.seq_len]  # (seq_len,)
+        y = self.data[idx + self.seq_len]         # scalar
 
-        household_index = idx // self.samples_per_household
-        local_index = idx % self.samples_per_household
+        x = torch.tensor(x).unsqueeze(-1)         # (seq_len, 1)
+        y = torch.tensor(y)                        # scalar
 
-        start = local_index
-        end_input = start + self.input_window
-        end_output = end_input + self.output_window
-
-        series = self.data[:, household_index]
-
-        x = series[start:end_input]
-        y = series[end_input:end_output]
-
-        x = torch.tensor(x, dtype=torch.float32).unsqueeze(-1)
-        y = torch.tensor(y, dtype=torch.float32)
-
-        return x, y, household_index
+        return x, y

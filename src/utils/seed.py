@@ -19,5 +19,9 @@ def set_seed(seed: int = 42):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
+    # Surface any remaining non-deterministic ops; warn_only avoids crashes
+    # on ops that have no deterministic implementation.
+    torch.use_deterministic_algorithms(True, warn_only=True)
+
     # For extra determinism (optional but recommended)
     os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"

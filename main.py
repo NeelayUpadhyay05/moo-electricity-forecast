@@ -1,5 +1,7 @@
 import multiprocessing
 import argparse
+import json
+import os
 import torch
 
 from src.utils.seed import set_seed
@@ -16,28 +18,44 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--mode", type=str, default="full", choices=["dev", "full"])
+    parser.add_argument("--zone", type=str, default="PJME")
     args = parser.parse_args()
 
     set_seed(args.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    if torch.cuda.is_available():
-        torch.backends.cudnn.benchmark = True
-
     config = Config(mode=args.mode)
-    train_df, val_df, test_df, scaling_params = load_data(config)
+    train_df, val_df, test_df, scaling_params = load_data(config, zone=args.zone)
 
-    baseline    = run_baseline(train_df, val_df, test_df, scaling_params, device, config, seed=args.seed)
-    random_res  = run_random_search(train_df, val_df, test_df, scaling_params, device, config, seed=args.seed)
-    optuna_res  = run_optuna(train_df, val_df, test_df, scaling_params, device, config, seed=args.seed)
-    pso_res     = run_pso(train_df, val_df, test_df, scaling_params, device, config, seed=args.seed)
-    moo_res     = run_moo(train_df, val_df, test_df, scaling_params, device, config, seed=args.seed)
+    baseline    = run_baseline(train_df, val_df, test_df, scaling_params, device, config, seed=args.seed, zone=args.zone)
+    random_res  = run_random_search(train_df, val_df, test_df, scaling_params, device, config, seed=args.seed, zone=args.zone)
+    optuna_res  = run_optuna(train_df, val_df, test_df, scaling_params, device, config, seed=args.seed, zone=args.zone)
+    pso_res     = run_pso(train_df, val_df, test_df, scaling_params, device, config, seed=args.seed, zone=args.zone)
+    moo_res     = run_moo(train_df, val_df, test_df, scaling_params, device, config, seed=args.seed, zone=args.zone)
 
     print("\n\n================ FINAL COMPARISON =================")
-    print(f"{'Method':<15}{'Val MSE':<15}{'Test RMSE':<15}{'Time (s)':<15}")
+    print(f"{'Method':<15}{'Val MSE':<15}{'Test NRMSE':<15}{'Time (s)':<15}")
     print("-" * 60)
-    print(f"{'Baseline':<15}{baseline[0]:<15.6f}{baseline[1]:<15.4f}{baseline[2]:<15.2f}")
-    print(f"{'Random':<15}{random_res[0]:<15.6f}{random_res[1]:<15.4f}{random_res[2]:<15.2f}")
-    print(f"{'Optuna (TPE)':<15}{optuna_res[0]:<15.6f}{optuna_res[1]:<15.4f}{optuna_res[2]:<15.2f}")
-    print(f"{'PSO':<15}{pso_res[0]:<15.6f}{pso_res[1]:<15.4f}{pso_res[2]:<15.2f}")
-    print(f"{'MOO':<15}{moo_res[0]:<15.6f}{moo_res[1]:<15.4f}{moo_res[2]:<15.2f}")
+    print(f"{'Baseline':<15}{baseline[0]:<15.6f}{baseline[1]:<15.6f}{baseline[2]:<15.2f}")
+    print(f"{'Random':<15}{random_res[0]:<15.6f}{random_res[1]:<15.6f}{random_res[2]:<15.2f}")
+    print(f"{'Optuna (TPE)':<15}{optuna_res[0]:<15.6f}{optuna_res[1]:<15.6f}{optuna_res[2]:<15.2f}")
+    print(f"{'PSO':<15}{pso_res[0]:<15.6f}{pso_res[1]:<15.6f}{pso_res[2]:<15.2f}")
+    print(f"{'MOO':<15}{moo_res[0]:<15.6f}{moo_res[1]:<15.6f}{moo_res[2]:<15.2f}")
+
+    comparison = {
+        "seed": args.seed,
+        "zone": args.zone,
+        "mode": args.mode,
+        "results": {
+            "baseline":   {"val_mse": baseline[0],   "test_nrmse": baseline[1],   "runtime_s": baseline[2]},
+            "random":     {"val_mse": random_res[0],  "test_nrmse": random_res[1],  "runtime_s": random_res[2]},
+            "optuna_tpe": {"val_mse": optuna_res[0],  "test_nrmse": optuna_res[1],  "runtime_s": optuna_res[2]},
+            "pso":        {"val_mse": pso_res[0],     "test_nrmse": pso_res[1],     "runtime_s": pso_res[2]},
+            "moo":        {"val_mse": moo_res[0],     "test_nrmse": moo_res[1],     "runtime_s": moo_res[2]},
+        },
+    }
+    out_dir = f"results/seed_{args.seed}/{args.zone}"
+    os.makedirs(out_dir, exist_ok=True)
+    with open(os.path.join(out_dir, "comparison.json"), "w") as f:
+        json.dump(comparison, f, indent=4)
+    print(f"\nComparison saved to {out_dir}/comparison.json")

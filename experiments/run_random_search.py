@@ -5,6 +5,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import argparse
 import time
 import json
+import math
 import random
 import torch
 import pandas as pd
@@ -20,11 +21,13 @@ from src.config import Config
 # ==========================================================
 # Result Saving
 # ==========================================================
-def save_results(out_dir, runtime, val_mse, test_metrics, best_hyperparams, convergence):
-    os.makedirs(out_dir, exist_ok=True)
+def save_results(out_dir, runtime, val_mse, test_metrics, best_hyperparams, convergence, seed, mode):
     result = {
+        "seed": seed,
+        "mode": mode,
         "runtime_s": round(runtime, 2),
         "best_val_mse": float(val_mse),
+        "best_test_nrmse": float(test_metrics["nrmse"]),
         "best_test_rmse": float(test_metrics["rmse"]),
         "best_test_mae": float(test_metrics["mae"]),
         "best_test_mape": float(test_metrics["mape"]),
@@ -39,35 +42,21 @@ def save_results(out_dir, runtime, val_mse, test_metrics, best_hyperparams, conv
 # ==========================================================
 # Data Loading (Mode Aware)
 # ==========================================================
-def load_data(config):
+def load_data(config, zone="PJME"):
 
-    train_df = pd.read_csv(
-        "data/processed/electricity_train.csv",
-        index_col=0,
-        parse_dates=True
-    )
-    val_df = pd.read_csv(
-        "data/processed/electricity_val.csv",
-        index_col=0,
-        parse_dates=True
-    )
-    test_df = pd.read_csv(
-        "data/processed/electricity_test.csv",
-        index_col=0,
-        parse_dates=True
-    )
+    base = f"data/processed/{zone}"
+    train_df = pd.read_csv(f"{base}_train.csv", index_col=0, parse_dates=True)
+    val_df   = pd.read_csv(f"{base}_val.csv",   index_col=0, parse_dates=True)
+    test_df  = pd.read_csv(f"{base}_test.csv",  index_col=0, parse_dates=True)
 
-    with open("data/processed/electricity_scaling.json") as f:
+    with open(f"{base}_scaling.json") as f:
         scaling_params = json.load(f)
 
     if config.mode == "dev":
-        print("\n[DEV MODE ACTIVE]")
-        print(f"Using first {config.dev_households} households")
-        print(f"Using first {config.dev_timesteps} timesteps")
-
-        train_df = train_df.iloc[:config.dev_timesteps, :config.dev_households]
-        val_df = val_df.iloc[:config.dev_timesteps, :config.dev_households]
-        test_df = test_df.iloc[:config.dev_timesteps, :config.dev_households]
+        print(f"\n[DEV MODE ACTIVE] zone={zone}, timesteps={config.dev_timesteps}")
+        train_df = train_df.iloc[:config.dev_timesteps]
+        val_df   = val_df.iloc[:config.dev_timesteps]
+        test_df  = test_df.iloc[:config.dev_timesteps]
 
     return train_df, val_df, test_df, scaling_params
 
@@ -75,8 +64,9 @@ def load_data(config):
 # ==========================================================
 # Random Search
 # ==========================================================
-def run_random_search(train_df, val_df, test_df, scaling_params, device, config, seed=42):
+def run_random_search(train_df, val_df, test_df, scaling_params, device, config, seed=42, zone="PJME"):
 
+    set_seed(seed)
     print("\n================ RANDOM SEARCH =================")
     start = time.time()
 
@@ -85,16 +75,17 @@ def run_random_search(train_df, val_df, test_df, scaling_params, device, config,
     convergence = []
     search_history = []
 
-    for trial in range(config.random_trials):
+    for trial in range(config.n_trials):
 
-        print(f"\n########## Trial {trial+1}/{config.random_trials} ##########")
+        print(f"\n########## Trial {trial+1}/{config.n_trials} ##########")
 
         trial_config = Config(mode=config.mode)
-        trial_config.hidden_dim = random.randint(32, 256)
-        trial_config.num_layers = random.choice([1, 2, 3])
-        trial_config.lr = random.uniform(1e-4, 5e-3)
-        trial_config.dropout = random.uniform(0.0, 0.3)
-        trial_config.checkpoint_path = f"checkpoints/seed_{seed}/random_trial.pt"
+        b = config.hp_bounds
+        trial_config.hidden_dim = random.randint(b["hidden_dim"][0], b["hidden_dim"][1])
+        trial_config.num_layers = random.randint(b["num_layers"][0], b["num_layers"][1])
+        trial_config.lr = 10 ** random.uniform(math.log10(b["lr"][0]), math.log10(b["lr"][1]))
+        trial_config.dropout = random.uniform(b["dropout"][0], b["dropout"][1])
+        trial_config.checkpoint_path = f"checkpoints/seed_{seed}/{zone}/random_trial.pt"
 
         os.makedirs(os.path.dirname(trial_config.checkpoint_path), exist_ok=True)
 
@@ -128,7 +119,7 @@ def run_random_search(train_df, val_df, test_df, scaling_params, device, config,
 
     print("\nRetraining Best Random Configuration...")
 
-    best_config.checkpoint_path = f"checkpoints/seed_{seed}/random_best.pt"
+    best_config.checkpoint_path = f"checkpoints/seed_{seed}/{zone}/random_best.pt"
 
     test_metrics = retrain_and_evaluate(
         train_df, val_df, test_df,
@@ -137,7 +128,7 @@ def run_random_search(train_df, val_df, test_df, scaling_params, device, config,
 
     runtime = time.time() - start
 
-    out_dir = f"results/seed_{seed}/random_search"
+    out_dir = f"results/seed_{seed}/{zone}/random_search"
     os.makedirs(out_dir, exist_ok=True)
     pd.DataFrame(search_history).to_csv(
         os.path.join(out_dir, "search_history.csv"), index=False
@@ -154,9 +145,11 @@ def run_random_search(train_df, val_df, test_df, scaling_params, device, config,
             "dropout": best_config.dropout,
         },
         convergence=convergence,
+        seed=seed,
+        mode=config.mode,
     )
 
-    return best_val, test_metrics["rmse"], runtime
+    return best_val, test_metrics["nrmse"], runtime
 
 
 # ==========================================================
@@ -167,24 +160,22 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--mode", type=str, default="full", choices=["dev", "full"])
+    parser.add_argument("--zone", type=str, default="PJME")
     args = parser.parse_args()
 
     set_seed(args.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    if torch.cuda.is_available():
-        torch.backends.cudnn.benchmark = True
-
     config = Config(mode=args.mode)
-    train_df, val_df, test_df, scaling_params = load_data(config)
+    train_df, val_df, test_df, scaling_params = load_data(config, zone=args.zone)
 
     val_mse, test_rmse, runtime = run_random_search(
-        train_df, val_df, test_df, scaling_params, device, config, seed=args.seed
+        train_df, val_df, test_df, scaling_params, device, config, seed=args.seed, zone=args.zone
     )
 
-    print(f"\n{'Method':<15}{'Val MSE':<15}{'Test RMSE':<15}{'Time (s)':<15}")
+    print(f"\n{'Method':<15}{'Val MSE':<15}{'Test NRMSE':<15}{'Time (s)':<15}")
     print("-" * 60)
-    print(f"{'Random Search':<15}{val_mse:<15.6f}{test_rmse:<15.4f}{runtime:<15.2f}")
+    print(f"{'Random Search':<15}{val_mse:<15.6f}{test_rmse:<15.6f}{runtime:<15.2f}")
 
 
 if __name__ == "__main__":
