@@ -1,17 +1,9 @@
 # Multi-Objective Hyperparameter Optimization for LSTM-Based Electricity Load Forecasting
 
-A systematic comparison of hyperparameter optimization (HPO) methods applied to an LSTM model for univariate electricity load forecasting. The core contribution is a **multi-objective optimization (MOO) approach using NSGA-II** that jointly minimizes validation error and model complexity, evaluated against four competing methods under a strictly equal function-evaluation budget.
+A systematic comparison of hyperparameter optimization (HPO) methods applied to an LSTM model for univariate electricity load forecasting on the PJM dataset. The work has two components:
 
----
-
-## Contribution
-
-Standard HPO treats model selection as a single-objective problem (minimize validation loss). This work frames it as a **Pareto optimization problem** — simultaneously minimizing:
-
-1. **Validation MSE** — forecasting accuracy
-2. **Model complexity** — number of trainable parameters (proxy for overfitting risk and inference cost)
-
-The Pareto front produced by MOO surfaces configurations that no single-objective method can explore by design. The selected solution from the front is compared against the best configurations found by four baselines under identical evaluation budgets.
+1. **Equal-budget comparison** — five methods evaluated under a strictly fair 30-evaluation budget across multiple zones and seeds.
+2. **Pareto front analysis** — a high-budget MOO run (150 evaluations) that produces a rich accuracy vs. model complexity trade-off curve, demonstrating what multi-objective optimization uniquely provides over single-objective methods.
 
 ---
 
@@ -21,11 +13,11 @@ The Pareto front produced by MOO surfaces configurations that no single-objectiv
 |--------|-------------|
 | Baseline | Fixed default hyperparameters — no search |
 | Random Search | Uniform random sampling over the search space |
-| PSO | Particle Swarm Optimization — single-objective, minimizes validation MSE |
-| Optuna | Bayesian optimization via TPE sampler (single-objective) |
-| **MOO** | **NSGA-II — multi-objective, minimizes validation MSE and complexity jointly** |
+| Optuna (TPE) | Bayesian optimization via Tree-structured Parzen Estimator |
+| PSO | Particle Swarm Optimization — minimizes validation MSE |
+| **MOO (NSGA-II)** | **Multi-objective — jointly minimizes validation MSE and model complexity** |
 
-All search methods operate under an **equal function-evaluation budget** (30 evaluations in full mode) to ensure fair comparison.
+All five methods share an **equal 30-evaluation budget** in the main comparison. MOO additionally produces a Pareto front of non-dominated solutions across both objectives.
 
 ---
 
@@ -36,17 +28,18 @@ All search methods operate under an **equal function-evaluation budget** (30 eva
 - Source: [Kaggle — Rob Mulla](https://www.kaggle.com/datasets/robikscube/hourly-energy-consumption)
 - Raw files: `data/raw/PJM/` (not tracked by git)
 - Format: two columns — `Datetime` and `{ZONE}_MW`
-- Frequency: hourly (1H)
+- Frequency: hourly
 - Target: univariate load (MW), no exogenous features
 
-| Zone | Rows | Span | MW Range |
-|------|------|------|----------|
-| PJME | 145,366 | 2002–2018 | 14,544–62,009 |
-| AEP  | 121,273 | 2004–2018 | 9,581–25,695  |
-| DAYTON | 121,275 | 2004–2018 | 982–3,746   |
-| DUQ  | 119,068 | 2005–2018 | 1,014–3,054  |
+**Zones used in experiments:**
 
-Experiments are run independently on each zone; results are reported per-zone to demonstrate consistency across different load scales and regional profiles.
+| Zone | Rows | Span | Mean Load (MW) |
+|------|------|------|----------------|
+| PJME | 145,366 | 2002–2018 | ~32,400 |
+| AEP | 121,273 | 2004–2018 | ~15,800 |
+| DAYTON | 121,275 | 2004–2018 | ~2,050 |
+
+Three zones were selected to cover a wide range of load magnitudes (small / medium / large), demonstrating generalizability across different regional profiles.
 
 **Train / Val / Test split** (chronological, no shuffling):
 
@@ -60,20 +53,20 @@ Experiments are run independently on each zone; results are reported per-zone to
 
 ## Model
 
-**Univariate LSTM** — a single-layer or multi-layer LSTM trained on a sliding window of past load values to forecast the next step.
+**Univariate LSTM** trained on a sliding window of past load values to forecast the next hour.
 
 - Input: sequence of `seq_len=24` hourly observations `(batch, 24, 1)`
 - Output: single next-hour forecast `(batch, 1)`
-- Normalization: z-score (mean/std computed on training split only)
-- Training: cosine annealing LR schedule + early stopping on validation MSE
+- Normalization: z-score (mean/std from training split only)
+- Training: Adam optimizer + early stopping on validation MSE
 
 **Hyperparameter search space (4D):**
 
-| Hyperparameter | Range | Type |
+| Hyperparameter | Range | Scale |
 |---|---|---|
 | `hidden_dim` | [32, 256] | Integer |
 | `num_layers` | [1, 3] | Integer |
-| `lr` | [1e-4, 5e-3] | Continuous (log scale) |
+| `lr` | [1e-4, 5e-3] | Log-continuous |
 | `dropout` | [0.0, 0.3] | Continuous |
 
 ---
@@ -84,9 +77,10 @@ All methods are evaluated on the held-out test set using the model retrained wit
 
 | Metric | Description |
 |---|---|
-| MSE | Mean Squared Error |
-| MAE | Mean Absolute Error |
-| MAPE | Mean Absolute Percentage Error |
+| NRMSE | Normalized RMSE (RMSE / mean load) — primary comparison metric |
+| RMSE | Root Mean Squared Error (MW) |
+| MAE | Mean Absolute Error (MW) |
+| MAPE | Mean Absolute Percentage Error (%) |
 
 ---
 
@@ -96,53 +90,58 @@ All methods are evaluated on the held-out test set using the model retrained wit
 MOO-Electricity-Forecast/
 ├── data/
 │   ├── raw/
-│   │   └── PJM/                        # raw CSVs (not tracked by git)
+│   │   └── PJM/                          # raw CSVs (not tracked by git)
 │   │       ├── PJME_hourly.csv
 │   │       ├── AEP_hourly.csv
 │   │       ├── DAYTON_hourly.csv
 │   │       └── ...
-│   └── processed/                      # preprocessed splits per zone
+│   └── processed/                        # preprocessed splits per zone
 │       ├── {zone}_train.csv
 │       ├── {zone}_val.csv
 │       ├── {zone}_test.csv
 │       └── {zone}_scaling.json
-├── checkpoints/                        # saved model weights per seed/method
-│   └── seed_{n}/
-├── results/                            # JSON metrics and search histories
-│   └── seed_{n}/
-│       ├── baseline/metrics.json
-│       ├── random_search/metrics.json
-│       ├── pso/metrics.json
-│       ├── optuna/metrics.json
-│       └── moo/
-│           ├── metrics.json
-│           └── pareto_front.csv
+├── checkpoints/
+│   ├── seed_{n}/{zone}/                  # checkpoints from main comparison
+│   └── pareto_analysis/{zone}/seed_{n}/ # checkpoints from Pareto analysis
+├── results/
+│   ├── seed_{n}/{zone}/                  # main 30-eval comparison results
+│   │   ├── baseline/metrics.json
+│   │   ├── random_search/metrics.json
+│   │   ├── optuna/metrics.json
+│   │   ├── pso/metrics.json
+│   │   ├── moo/
+│   │   │   ├── metrics.json
+│   │   │   └── pareto_front.csv
+│   │   └── comparison.json
+│   └── pareto_analysis/{zone}/seed_{n}/ # high-budget MOO Pareto results
+│       ├── pareto_front.csv              # up to 15 non-dominated solutions
+│       └── metrics.json
 ├── experiments/
-│   ├── run_baseline.py                 # fixed-config baseline
-│   ├── run_random_search.py            # random search
-│   ├── run_pso.py                      # PSO
-│   ├── run_optuna.py                   # Optuna (TPE)
-│   └── run_moo.py                      # MOO (NSGA-II)
+│   ├── run_baseline.py                   # fixed-config baseline
+│   ├── run_random_search.py              # random search
+│   ├── run_optuna.py                     # Optuna (TPE)
+│   ├── run_pso.py                        # PSO
+│   ├── run_moo.py                        # MOO (NSGA-II) — 30-eval budget
+│   └── run_moo_pareto.py                 # MOO high-budget Pareto analysis (150 evals)
 ├── src/
-│   ├── config.py                       # all hyperparameters and mode settings
+│   ├── config.py                         # all hyperparameters and mode settings
 │   ├── models/
-│   │   └── lstm.py                     # LSTM model definition
+│   │   └── lstm.py                       # LSTM model definition
 │   ├── data/
-│   │   ├── dataset.py                  # PyTorch Dataset (sliding window)
-│   │   ├── preprocess.py               # PJM preprocessing pipeline
-│   │   └── run_preprocessing.py        # preprocessing entry point
+│   │   ├── dataset.py                    # PyTorch Dataset (sliding window)
+│   │   ├── preprocess.py                 # PJM preprocessing pipeline
+│   │   └── run_preprocessing.py          # preprocessing entry point
 │   ├── optimizers/
-│   │   ├── pso.py                      # Particle Swarm Optimization
-│   │   └── moo.py                      # NSGA-II multi-objective optimizer
+│   │   ├── pso.py                        # PSO with boundary velocity reset
+│   │   └── moo.py                        # NSGA-II (SBX crossover + polynomial mutation)
 │   ├── training/
-│   │   ├── trainer.py                  # train_one_epoch / validate
-│   │   ├── training_pipeline.py        # train_single_configuration / retrain_and_evaluate
-│   │   ├── fitness.py                  # fitness functions for PSO and MOO
-│   │   ├── early_stopping.py           # early stopping with checkpoint saving
-│   │   └── experiment_runner.py        # orchestrates all methods
+│   │   ├── trainer.py                    # train_one_epoch / validate
+│   │   ├── training_pipeline.py          # train_single_configuration / retrain_and_evaluate
+│   │   ├── fitness.py                    # fitness functions for PSO and MOO
+│   │   └── early_stopping.py             # early stopping with checkpoint saving
 │   └── utils/
-│       └── seed.py                     # reproducibility (Python, NumPy, PyTorch)
-├── main.py                             # entry point
+│       └── seed.py                       # reproducibility (Python, NumPy, PyTorch)
+├── main.py                               # runs all 5 methods for one seed/zone
 ├── requirements.txt
 └── README.md
 ```
@@ -161,37 +160,56 @@ Download PJM CSV files from Kaggle and place them in `data/raw/PJM/`.
 
 ## Preprocessing
 
-Run once per zone to generate the processed splits:
+Run once per zone before any experiments:
 
 ```bash
 python -m src.data.run_preprocessing --zone PJME
+python -m src.data.run_preprocessing --zone AEP
+python -m src.data.run_preprocessing --zone DAYTON
 ```
-
-This produces:
-- `data/processed/PJME_train.csv`
-- `data/processed/PJME_val.csv`
-- `data/processed/PJME_test.csv`
-- `data/processed/PJME_scaling.json`
 
 ---
 
 ## Running Experiments
 
-Run all methods sequentially:
+### Main comparison (all 5 methods, one seed + zone)
 
 ```bash
-python main.py
+python main.py --seed 42 --mode full --zone PJME
 ```
 
-Or run individual methods:
+### Individual methods
 
 ```bash
-python experiments/run_baseline.py
-python experiments/run_random_search.py
-python experiments/run_pso.py
-python experiments/run_optuna.py
-python experiments/run_moo.py
+python experiments/run_baseline.py      --seed 42 --mode full --zone PJME
+python experiments/run_random_search.py --seed 42 --mode full --zone PJME
+python experiments/run_optuna.py        --seed 42 --mode full --zone PJME
+python experiments/run_pso.py           --seed 42 --mode full --zone PJME
+python experiments/run_moo.py           --seed 42 --mode full --zone PJME
 ```
+
+### High-budget MOO Pareto analysis (separate from comparison)
+
+```bash
+python experiments/run_moo_pareto.py --seed 42 --mode full --zone PJME
+```
+
+This runs NSGA-II with `pop_size=15, generations=9` (150 total evaluations) and saves a rich Pareto front of up to 15 non-dominated solutions to `results/pareto_analysis/{zone}/seed_{n}/`.
+
+### Multi-seed / multi-zone runs
+
+Results are saved under `results/seed_{n}/{zone}/` — different seeds and zones never overwrite each other.
+
+```bash
+# Example: 5 seeds × 3 zones
+for seed in 0 24 42 247 296; do
+  for zone in PJME AEP DAYTON; do
+    python main.py --seed $seed --zone $zone
+  done
+done
+```
+
+---
 
 ### Dev vs Full mode
 
@@ -204,14 +222,15 @@ python experiments/run_moo.py
 | Random trials | 12 | 30 |
 | PSO swarm / iterations | 4 / 2 | 6 / 4 |
 | MOO population / generations | 4 / 2 | 6 / 4 |
+| Timesteps (dev truncation) | 2,000 | full dataset |
 
-Dev mode is for rapid iteration and debugging. Full mode is used for all reported results.
+`dev` mode is for rapid debugging. All reported results use `full` mode.
 
 ---
 
 ## Reproducibility
 
-All experiments seed Python, NumPy, and PyTorch via `set_seed(seed)`. Default seed is 42. CuDNN deterministic mode is enabled. Results are saved per-seed under `results/seed_{n}/` and `checkpoints/seed_{n}/`.
+All experiments seed Python, NumPy, and PyTorch via `set_seed(seed)`. CuDNN deterministic mode is enabled when CUDA is available. Results are saved per seed and zone under `results/seed_{n}/{zone}/` and `checkpoints/seed_{n}/{zone}/`.
 
 ---
 

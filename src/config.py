@@ -1,3 +1,6 @@
+import sys
+
+
 class Config:
     def __init__(self, mode="dev"):
 
@@ -28,7 +31,7 @@ class Config:
             self.search_epochs  = 20      # epochs per fitness evaluation during HPO
             self.search_patience = 5      # early stopping patience during HPO
             self.retrain_epochs = 60      # epochs for final retrain after HPO
-            self.num_workers    = 4
+            self.num_workers    = 0 if sys.platform == "win32" else 4
         else:
             self.lr             = 0.001
             self.batch_size     = 512
