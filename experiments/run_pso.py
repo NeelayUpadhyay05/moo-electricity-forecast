@@ -105,10 +105,10 @@ def run_pso(train_df, val_df, test_df, scaling_params, device, config, seed=42, 
     best_position, best_val, history = pso.optimize()
 
     best_config = Config(mode=config.mode)
-    best_config.hidden_dim = int(np.round(best_position[0]))
-    best_config.num_layers = int(np.round(best_position[1]))
-    best_config.lr = float(10 ** best_position[2])
-    best_config.dropout = float(best_position[3])
+    best_config.hidden_dim = int(np.clip(np.round(best_position[0]), b["hidden_dim"][0], b["hidden_dim"][1]))
+    best_config.num_layers = int(np.clip(np.round(best_position[1]), b["num_layers"][0], b["num_layers"][1]))
+    best_config.lr = float(np.clip(10 ** best_position[2], b["lr"][0], b["lr"][1]))
+    best_config.dropout = float(np.clip(best_position[3], b["dropout"][0], b["dropout"][1]))
     best_config.checkpoint_path = f"checkpoints/seed_{seed}/{zone}/pso_best.pt"
 
     os.makedirs(os.path.dirname(best_config.checkpoint_path), exist_ok=True)
