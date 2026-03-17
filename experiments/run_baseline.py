@@ -71,7 +71,7 @@ def run_baseline(train_df, val_df, test_df, scaling_params, device, config, seed
     base_config = Config(mode=config.mode)
     base_config.hidden_dim = 128
     base_config.num_layers = 1
-    base_config.lr = 0.001
+    base_config.lr = 0.004
     base_config.dropout = 0.0
     base_config.checkpoint_path = f"checkpoints/seed_{seed}/{zone}/baseline_best.pt"
 
@@ -96,7 +96,7 @@ def run_baseline(train_df, val_df, test_df, scaling_params, device, config, seed
         val_mse=val_mse,
         test_metrics=test_metrics,
         best_hyperparams={
-            "hidden_dim": 128, "num_layers": 1, "lr": 0.001, "dropout": 0.0
+            "hidden_dim": 128, "num_layers": 1, "lr": 0.004, "dropout": 0.0
         },
         convergence=[],
         seed=seed,
