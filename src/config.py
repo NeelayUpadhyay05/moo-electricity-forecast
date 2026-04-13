@@ -51,17 +51,21 @@ class Config:
         self.persistent_workers = (self.num_workers > 0) # keep workers alive between epochs
 
         # -----------------------
-        # Search Budgets (mode-specific, equal across all three methods)
-        # Full: 30 evaluations each — random=30, PSO=6×(1+4)=30, MOO=6×(1+4)=30
-        # Dev:  12 evaluations each — random=12, PSO=4×(1+2)=12, MOO=4×(1+2)=12
+        # Search Budgets
+        # Full mode follows the research fairness setting:
+        # MOO: pop=30, gen=30 -> 30 x (1 + 30) = 930 evaluations.
+        # PSO/Random/Optuna are aligned to the same 930-eval budget.
         # -----------------------
         if mode == "full":
-            self.n_trials        = 30
-            self.pso_swarm_size  = 6
-            self.pso_iterations  = 4   # 6 × (1 + 4) = 30 total evals
-            self.moo_pop_size    = 6
-            self.moo_generations = 4   # 6 × (1 + 4) = 30 total evals
+            self.fair_budget_evals = 930
+            self.n_trials        = self.fair_budget_evals
+            self.pso_swarm_size  = 30
+            self.pso_iterations  = 30  # 30 x (1 + 30) = 930 total evals
+            self.moo_pop_size    = 30
+            self.moo_generations = 30
         else:
+            # Dev mode remains lightweight for iteration speed.
+            self.fair_budget_evals = 12
             self.n_trials        = 12
             self.pso_swarm_size  = 4
             self.pso_iterations  = 2   # 4 × (1 + 2) = 12 total evals

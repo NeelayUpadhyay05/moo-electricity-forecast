@@ -32,6 +32,8 @@ def save_results(out_dir, runtime, val_mse, test_metrics, best_hyperparams, conv
         "best_test_rmse": float(test_metrics["rmse"]),
         "best_test_mae": float(test_metrics["mae"]),
         "best_test_mape": float(test_metrics["mape"]),
+        "best_complexity": int(best_hyperparams["complexity"]),
+        "objectives": ["val_mse", "complexity"],
         "best_hyperparams": best_hyperparams,
         "convergence": [float(v) for v in convergence],
     }
@@ -90,7 +92,8 @@ def run_pso(train_df, val_df, test_df, scaling_params, device, config, seed=42, 
             "num_layers": int(np.clip(np.round(particle[1]), b["num_layers"][0], b["num_layers"][1])),
             "lr":         float(np.clip(10 ** particle[2], b["lr"][0], b["lr"][1])),
             "dropout":    float(np.clip(particle[3], b["dropout"][0], b["dropout"][1])),
-            "val_mse":    score,
+            "val_mse":    float(score[0]),
+            "complexity": int(score[1]),
         })
         return score
 
@@ -102,13 +105,31 @@ def run_pso(train_df, val_df, test_df, scaling_params, device, config, seed=42, 
         seed=seed
     )
 
-    best_position, best_val, history = pso.optimize()
+    pareto_solutions, history = pso.optimize()
+
+    evaluated = []
+    for solution in pareto_solutions:
+        hidden_dim, num_layers, lr, dropout = solution["params"]
+        evaluated.append({
+            "val_mse": float(solution["val_mse"]),
+            "complexity": int(solution["complexity"]),
+            "hyperparams": {
+                "hidden_dim": int(np.clip(np.round(hidden_dim), b["hidden_dim"][0], b["hidden_dim"][1])),
+                "num_layers": int(np.clip(np.round(num_layers), b["num_layers"][0], b["num_layers"][1])),
+                "lr": float(np.clip(10 ** lr, b["lr"][0], b["lr"][1])),
+                "dropout": float(np.clip(dropout, b["dropout"][0], b["dropout"][1])),
+            },
+        })
+
+    # Common fair selection policy: choose minimum validation MSE from Pareto set.
+    best_solution = min(evaluated, key=lambda x: x["val_mse"])
+    best_hp = best_solution["hyperparams"]
 
     best_config = Config(mode=config.mode)
-    best_config.hidden_dim = int(np.clip(np.round(best_position[0]), b["hidden_dim"][0], b["hidden_dim"][1]))
-    best_config.num_layers = int(np.clip(np.round(best_position[1]), b["num_layers"][0], b["num_layers"][1]))
-    best_config.lr = float(np.clip(10 ** best_position[2], b["lr"][0], b["lr"][1]))
-    best_config.dropout = float(np.clip(best_position[3], b["dropout"][0], b["dropout"][1]))
+    best_config.hidden_dim = best_hp["hidden_dim"]
+    best_config.num_layers = best_hp["num_layers"]
+    best_config.lr = best_hp["lr"]
+    best_config.dropout = best_hp["dropout"]
     best_config.checkpoint_path = f"checkpoints/seed_{seed}/{zone}/pso_best.pt"
 
     os.makedirs(os.path.dirname(best_config.checkpoint_path), exist_ok=True)
@@ -125,24 +146,39 @@ def run_pso(train_df, val_df, test_df, scaling_params, device, config, seed=42, 
     pd.DataFrame(pso_search_history).to_csv(
         os.path.join(out_dir, "search_history.csv"), index=False
     )
+    pareto_rows = [
+        {
+            "hidden_dim": e["hyperparams"]["hidden_dim"],
+            "num_layers": e["hyperparams"]["num_layers"],
+            "lr": e["hyperparams"]["lr"],
+            "dropout": e["hyperparams"]["dropout"],
+            "val_mse": e["val_mse"],
+            "complexity": e["complexity"],
+        }
+        for e in evaluated
+    ]
+    pd.DataFrame(pareto_rows).to_csv(
+        os.path.join(out_dir, "pareto_front.csv"), index=False
+    )
 
     save_results(
         out_dir=out_dir,
         runtime=runtime,
-        val_mse=best_val,
+        val_mse=best_solution["val_mse"],
         test_metrics=test_metrics,
         best_hyperparams={
             "hidden_dim": best_config.hidden_dim,
             "num_layers": best_config.num_layers,
             "lr": best_config.lr,
             "dropout": best_config.dropout,
+            "complexity": best_solution["complexity"],
         },
         convergence=history,
         seed=seed,
         mode=config.mode,
     )
 
-    return best_val, test_metrics["nrmse"], runtime
+    return best_solution["val_mse"], test_metrics["nrmse"], runtime
 
 
 # ==========================================================

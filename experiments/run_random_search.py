@@ -11,6 +11,7 @@ import torch
 import pandas as pd
 
 from src.utils.seed import set_seed
+from src.models.lstm import LSTMModel, count_parameters
 from src.training.training_pipeline import (
     train_single_configuration,
     retrain_and_evaluate
@@ -31,6 +32,8 @@ def save_results(out_dir, runtime, val_mse, test_metrics, best_hyperparams, conv
         "best_test_rmse": float(test_metrics["rmse"]),
         "best_test_mae": float(test_metrics["mae"]),
         "best_test_mape": float(test_metrics["mape"]),
+        "best_complexity": int(best_hyperparams["complexity"]),
+        "objectives": ["val_mse", "complexity"],
         "best_hyperparams": best_hyperparams,
         "convergence": [float(v) for v in convergence],
     }
@@ -64,6 +67,10 @@ def load_data(config, zone="PJME"):
 # ==========================================================
 # Random Search
 # ==========================================================
+def dominates(a, b):
+    return ((a[0] <= b[0] and a[1] <= b[1]) and (a[0] < b[0] or a[1] < b[1]))
+
+
 def run_random_search(train_df, val_df, test_df, scaling_params, device, config, seed=42, zone="PJME"):
 
     set_seed(seed)
@@ -71,9 +78,9 @@ def run_random_search(train_df, val_df, test_df, scaling_params, device, config,
     start = time.time()
 
     best_val = float("inf")
-    best_config = None
     convergence = []
     search_history = []
+    pareto_archive = []
 
     for trial in range(config.n_trials):
 
@@ -100,11 +107,17 @@ def run_random_search(train_df, val_df, test_df, scaling_params, device, config,
             train_df, val_df, device, trial_config
         )
 
-        print(f"Validation MSE: {val_mse:.6f}")
+        model = LSTMModel(
+            hidden_dim=trial_config.hidden_dim,
+            num_layers=trial_config.num_layers,
+            dropout=trial_config.dropout,
+        )
+        complexity = count_parameters(model)
+
+        print(f"Validation MSE: {val_mse:.6f} | Complexity: {complexity}")
 
         if val_mse < best_val:
             best_val = val_mse
-            best_config = trial_config
             print(">> New Best Found!")
 
         convergence.append(best_val)
@@ -115,10 +128,43 @@ def run_random_search(train_df, val_df, test_df, scaling_params, device, config,
             "lr": trial_config.lr,
             "dropout": trial_config.dropout,
             "val_mse": val_mse,
+            "complexity": int(complexity),
         })
+
+        current = {
+            "hidden_dim": trial_config.hidden_dim,
+            "num_layers": trial_config.num_layers,
+            "lr": trial_config.lr,
+            "dropout": trial_config.dropout,
+            "val_mse": float(val_mse),
+            "complexity": int(complexity),
+        }
+
+        candidate = (current["val_mse"], current["complexity"])
+        dominated = False
+        filtered = []
+        for item in pareto_archive:
+            point = (item["val_mse"], item["complexity"])
+            if dominates(point, candidate):
+                dominated = True
+                break
+            if dominates(candidate, point):
+                continue
+            filtered.append(item)
+
+        if not dominated:
+            filtered.append(current)
+            pareto_archive = filtered
+
+    best_solution = min(pareto_archive, key=lambda x: x["val_mse"])
 
     print("\nRetraining Best Random Configuration...")
 
+    best_config = Config(mode=config.mode)
+    best_config.hidden_dim = best_solution["hidden_dim"]
+    best_config.num_layers = best_solution["num_layers"]
+    best_config.lr = best_solution["lr"]
+    best_config.dropout = best_solution["dropout"]
     best_config.checkpoint_path = f"checkpoints/seed_{seed}/{zone}/random_best.pt"
 
     test_metrics = retrain_and_evaluate(
@@ -133,23 +179,27 @@ def run_random_search(train_df, val_df, test_df, scaling_params, device, config,
     pd.DataFrame(search_history).to_csv(
         os.path.join(out_dir, "search_history.csv"), index=False
     )
+    pd.DataFrame(pareto_archive).to_csv(
+        os.path.join(out_dir, "pareto_front.csv"), index=False
+    )
     save_results(
         out_dir=out_dir,
         runtime=runtime,
-        val_mse=best_val,
+        val_mse=best_solution["val_mse"],
         test_metrics=test_metrics,
         best_hyperparams={
             "hidden_dim": best_config.hidden_dim,
             "num_layers": best_config.num_layers,
             "lr": best_config.lr,
             "dropout": best_config.dropout,
+            "complexity": best_solution["complexity"],
         },
         convergence=convergence,
         seed=seed,
         mode=config.mode,
     )
 
-    return best_val, test_metrics["nrmse"], runtime
+    return best_solution["val_mse"], test_metrics["nrmse"], runtime
 
 
 # ==========================================================

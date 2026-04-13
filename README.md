@@ -1,9 +1,8 @@
 # Multi-Objective Hyperparameter Optimization for LSTM-Based Electricity Load Forecasting
 
-A systematic comparison of hyperparameter optimization (HPO) methods applied to an LSTM model for univariate electricity load forecasting on the PJM dataset. The work has two components:
+A systematic comparison of hyperparameter optimization (HPO) methods applied to an LSTM model for univariate electricity load forecasting on the PJM dataset.
 
-1. **Equal-budget comparison** — five methods evaluated under a strictly fair 30-evaluation budget across multiple zones and seeds.
-2. **Pareto front analysis** — a high-budget MOO run (150 evaluations) that produces a rich accuracy vs. model complexity trade-off curve, demonstrating what multi-objective optimization uniquely provides over single-objective methods.
+All search-based methods are evaluated under a strictly fair budget across multiple zones and seeds. In `full` mode, each search optimizer runs 930 evaluations.
 
 ---
 
@@ -12,12 +11,12 @@ A systematic comparison of hyperparameter optimization (HPO) methods applied to 
 | Method | Description |
 |--------|-------------|
 | Baseline | Fixed default hyperparameters — no search |
-| Random Search | Uniform random sampling over the search space |
-| Optuna (TPE) | Bayesian optimization via Tree-structured Parzen Estimator |
-| PSO | Particle Swarm Optimization — minimizes validation MSE |
-| **MOO (NSGA-II)** | **Multi-objective — jointly minimizes validation MSE and model complexity** |
+| Random Search (MO) | Uniform random sampling with Pareto filtering on `(val_mse, complexity)` |
+| Optuna (MO-TPE) | Multi-objective TPE that minimizes `(val_mse, complexity)` |
+| PSO (MOPSO) | Multi-objective particle swarm with Pareto archive and leader sampling |
+| **MOO (NSGA-II)** | **Multi-objective evolutionary search minimizing `(val_mse, complexity)`** |
 
-All five methods share an **equal 30-evaluation budget** in the main comparison. MOO additionally produces a Pareto front of non-dominated solutions across both objectives.
+All search-based methods share an **equal budget** in the main comparison. In `full` mode this is **930 evaluations each**: `MOO = 30 x (1 + 30)`, `MOPSO = 30 x (1 + 30)`, `Random = 930 trials`, and `Optuna = 930 trials`. Baseline remains a fixed non-search reference run.
 
 ---
 
@@ -102,9 +101,8 @@ MOO-Electricity-Forecast/
 │       └── {zone}_scaling.json
 ├── checkpoints/
 │   ├── seed_{n}/{zone}/                  # checkpoints from main comparison
-│   └── pareto_analysis/{zone}/seed_{n}/ # checkpoints from Pareto analysis
 ├── results/
-│   ├── seed_{n}/{zone}/                  # main 30-eval comparison results
+│   ├── seed_{n}/{zone}/                  # main equal-budget comparison results
 │   │   ├── baseline/metrics.json
 │   │   ├── random_search/metrics.json
 │   │   ├── optuna/metrics.json
@@ -113,16 +111,12 @@ MOO-Electricity-Forecast/
 │   │   │   ├── metrics.json
 │   │   │   └── pareto_front.csv
 │   │   └── comparison.json
-│   └── pareto_analysis/{zone}/seed_{n}/ # high-budget MOO Pareto results
-│       ├── pareto_front.csv              # up to 15 non-dominated solutions
-│       └── metrics.json
 ├── experiments/
 │   ├── run_baseline.py                   # fixed-config baseline
 │   ├── run_random_search.py              # random search
 │   ├── run_optuna.py                     # Optuna (TPE)
 │   ├── run_pso.py                        # PSO
-│   ├── run_moo.py                        # MOO (NSGA-II) — 30-eval budget
-│   └── run_moo_pareto.py                 # MOO high-budget Pareto analysis (150 evals)
+│   └── run_moo.py                        # MOO (NSGA-II) under equal budget
 ├── src/
 │   ├── config.py                         # all hyperparameters and mode settings
 │   ├── models/
@@ -188,14 +182,6 @@ python experiments/run_pso.py           --seed 42 --mode full --zone PJME
 python experiments/run_moo.py           --seed 42 --mode full --zone PJME
 ```
 
-### High-budget MOO Pareto analysis (separate from comparison)
-
-```bash
-python experiments/run_moo_pareto.py --seed 42 --mode full --zone PJME
-```
-
-This runs NSGA-II with `pop_size=15, generations=9` (150 total evaluations) and saves a rich Pareto front of up to 15 non-dominated solutions to `results/pareto_analysis/{zone}/seed_{n}/`.
-
 ### Multi-seed / multi-zone runs
 
 Results are saved under `results/seed_{n}/{zone}/` — different seeds and zones never overwrite each other.
@@ -218,10 +204,10 @@ done
 | Batch size | 512 | 2048 |
 | Search epochs (per eval) | 10 + early stop (patience 3) | 20 + early stop (patience 5) |
 | Retrain epochs | 15 | 60 |
-| Eval budget (all methods) | 12 | 30 |
-| Random trials | 12 | 30 |
-| PSO swarm / iterations | 4 / 2 | 6 / 4 |
-| MOO population / generations | 4 / 2 | 6 / 4 |
+| Eval budget (search methods) | 12 | 930 |
+| Random trials | 12 | 930 |
+| PSO swarm / iterations | 4 / 2 | 30 / 30 |
+| MOO population / generations | 4 / 2 | 30 / 30 |
 | Timesteps (dev truncation) | 2,000 | full dataset |
 
 `dev` mode is for rapid debugging. All reported results use `full` mode.
