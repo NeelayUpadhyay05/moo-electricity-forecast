@@ -22,19 +22,16 @@ from src.config import Config
 # ==========================================================
 # Result Saving
 # ==========================================================
-def save_results(out_dir, runtime, val_mse, test_metrics, best_hyperparams, convergence, seed, mode):
+def save_results(out_dir, runtime, test_metrics, best_hyperparams, search_history, seed, mode):
     result = {
         "seed": seed,
         "mode": mode,
-        "best_val_mse": float(val_mse),
-        "best_test_nrmse": float(test_metrics["nrmse"]),
-        "best_test_rmse": float(test_metrics["rmse"]),
-        "best_test_mae": float(test_metrics["mae"]),
-        "best_test_mape": float(test_metrics["mape"]),
-        "best_complexity": int(best_hyperparams["complexity"]),
-        "objectives": ["val_mse"],
+        "test_rmse": float(test_metrics["rmse"]),
+        "test_mae": float(test_metrics["mae"]),
+        "test_mape": float(test_metrics["mape"]),
+        "test_r2": float(test_metrics["r2"]),
         "best_hyperparams": best_hyperparams,
-        "convergence": [float(v) for v in convergence],
+        "search_history": search_history,
     }
     with open(os.path.join(out_dir, "metrics.json"), "w") as f:
         json.dump(result, f, indent=4)
@@ -168,25 +165,22 @@ def run_random_search(train_df, val_df, test_df, scaling_params, device, config,
     pd.DataFrame(search_history).to_csv(
         os.path.join(out_dir, "search_history.csv"), index=False
     )
-    # pareto front not applicable for single-objective search
     save_results(
         out_dir=out_dir,
         runtime=runtime,
-        val_mse=best_solution["val_mse"],
         test_metrics=test_metrics,
         best_hyperparams={
             "hidden_dim": best_config.hidden_dim,
             "num_layers": best_config.num_layers,
             "lr": best_config.lr,
             "dropout": best_config.dropout,
-            "complexity": best_solution["complexity"],
         },
-        convergence=convergence,
+        search_history=search_history,
         seed=seed,
         mode=config.mode,
     )
 
-    return best_solution["val_mse"], test_metrics["nrmse"], runtime
+    return best_solution["val_mse"], test_metrics["rmse"], runtime
 
 
 # ==========================================================

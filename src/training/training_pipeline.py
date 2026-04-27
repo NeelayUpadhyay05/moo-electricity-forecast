@@ -2,6 +2,7 @@ from src.data.dataset import LoadDataset
 from src.models.lstm import LSTMModel
 from src.training.trainer import train_one_epoch, validate
 from src.training.early_stopping import EarlyStopping
+from src.metrics import calculate_r2
 
 import sys
 
@@ -176,44 +177,39 @@ def retrain_and_evaluate(train_data, val_data, test_data,
     mean = scaling_params["mean"]
     std  = scaling_params["std"]
 
-    all_norm_squared_errors = []
-    all_squared_errors      = []
-    all_abs_errors          = []
-    all_target_values       = []
+    all_predictions = []
+    all_targets_normalized = []
+    all_targets_original = []
 
     with torch.no_grad():
         for x, y in test_loader:
             x = x.to(device)
+            outputs = model(x).cpu().numpy()   # (batch,) normalized predictions
+            targets = y.numpy()                # (batch,) normalized targets
 
-            outputs = model(x).cpu().numpy()   # (batch,)
-            targets = y.numpy()                # (batch,)
-
-            # Normalized MSE — consistent with the val MSE search objective
-            all_norm_squared_errors.append((outputs - targets) ** 2)
-
+            all_predictions.append(outputs)
+            all_targets_normalized.append(targets)
+            
             # Inverse z-score to recover original MW scale
-            pred_inv   = outputs * std + mean
             target_inv = targets * std + mean
+            all_targets_original.append(target_inv)
 
-            all_squared_errors.append((pred_inv - target_inv) ** 2)
-            all_abs_errors.append(np.abs(pred_inv - target_inv))
-            all_target_values.append(np.abs(target_inv))
+    pred_norm = np.concatenate(all_predictions)
+    targ_norm = np.concatenate(all_targets_normalized)
+    targ_orig = np.concatenate(all_targets_original)
+    
+    # Predictions in original scale
+    pred_orig = pred_norm * std + mean
 
-    norm_sq = np.concatenate(all_norm_squared_errors)
-    squared = np.concatenate(all_squared_errors)
-    abs_err = np.concatenate(all_abs_errors)
-    abs_tgt = np.concatenate(all_target_values)
-
-    nrmse = float(np.sqrt(np.mean(norm_sq)))
-    rmse  = float(np.sqrt(np.mean(squared)))
-    mae   = float(np.mean(abs_err))
-    # Floor denominator to avoid extreme percentages when targets are near zero
-    mape  = float(np.mean(abs_err / np.clip(abs_tgt, 1.0, None)) * 100)
+    # Calculate metrics
+    rmse = float(np.sqrt(np.mean((pred_orig - targ_orig) ** 2)))
+    mae = float(np.mean(np.abs(pred_orig - targ_orig)))
+    mape = float(np.mean(np.abs(pred_orig - targ_orig) / np.clip(np.abs(targ_orig), 1.0, None)) * 100)
+    r2 = calculate_r2(pred_norm, targ_norm)
 
     print(
-        f"[Final Test]  NRMSE: {nrmse:.6f}  "
-        f"RMSE: {rmse:.4f} MW  MAE: {mae:.4f} MW  MAPE: {mape:.2f}%"
+        f"[Final Test]  RMSE: {rmse:.4f} MW  MAE: {mae:.4f} MW  MAPE: {mape:.2f}%  R2: {r2:.4f}"
     )
     print(f"Model saved to: {config.checkpoint_path}")
 
-    return {"nrmse": nrmse, "rmse": rmse, "mae": mae, "mape": mape}
+    return {"rmse": rmse, "mae": mae, "mape": mape, "r2": r2}

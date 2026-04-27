@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 
 from src.models.lightgbm_model import train_lightgbm, predict_lightgbm
+from src.metrics import calculate_rmse, calculate_mae, calculate_mape, calculate_r2
 from src.config import Config
 from src.utils.seed import set_seed
 
@@ -19,18 +20,6 @@ def build_lag_features(series, lags=24):
         X.append(series[i - lags:i])
         y.append(series[i])
     return np.array(X), np.array(y)
-
-
-def metrics(preds, targets, scaling_params):
-    mean = scaling_params["mean"]
-    std = scaling_params["std"]
-    preds_n = (preds - mean) / std
-    targets_n = (targets - mean) / std
-    nrmse = float(np.sqrt(np.mean((preds_n - targets_n) ** 2)))
-    rmse = float(np.sqrt(np.mean((preds - targets) ** 2)))
-    mae = float(np.mean(np.abs(preds - targets)))
-    mape = float(np.mean(np.abs(preds - targets) / np.clip(np.abs(targets), 1.0, None)) * 100)
-    return {"nrmse": nrmse, "rmse": rmse, "mae": mae, "mape": mape}
 
 
 def load_data(config, zone="PJME"):
@@ -53,12 +42,14 @@ def run_lightgbm(train_df, val_df, test_df, scaling_params, config, seed=42, zon
     start = time.time()
 
     lags = config.seq_len
+    mean = scaling_params["mean"]
+    std = scaling_params["std"]
+    
     train_series = train_df.iloc[:, 0].values
     val_series = val_df.iloc[:, 0].values
     test_series = test_df.iloc[:, 0].values
 
     X_train, y_train = build_lag_features(np.concatenate([train_series, val_series]), lags=lags)
-    # for test, construct rolling predictions from end of train+val
     model = train_lightgbm(X_train, y_train, params=None, num_boost_round=100)
 
     # Build test features using trailing lags from combined
@@ -67,19 +58,35 @@ def run_lightgbm(train_df, val_df, test_df, scaling_params, config, seed=42, zon
     # test starts after len(train)+len(val): compute index
     start_idx = len(train_series) + len(val_series) - lags
     X_test = X_all[start_idx: start_idx + len(test_series)]
-    preds = predict_lightgbm(model, X_test)
+    preds = predict_lightgbm(model, X_test)[:len(test_series)]
 
-    test_metrics = metrics(preds, test_series, scaling_params)
+    # Compute metrics
+    rmse = calculate_rmse(preds, test_series)
+    mae = calculate_mae(preds, test_series)
+    mape = calculate_mape(preds, test_series)
+    
+    preds_norm = (preds - mean) / std
+    test_norm = (test_series - mean) / std
+    r2 = calculate_r2(preds_norm, test_norm)
 
     runtime = time.time() - start
 
     out_dir = f"results/seed_{seed}/{zone}/lightgbm"
     os.makedirs(out_dir, exist_ok=True)
+    result = {
+        "seed": seed,
+        "mode": config.mode,
+        "test_rmse": float(rmse),
+        "test_mae": float(mae),
+        "test_mape": float(mape),
+        "test_r2": float(r2),
+        "runtime": runtime,
+    }
     with open(os.path.join(out_dir, "metrics.json"), "w") as f:
-        json.dump({"runtime": runtime, **test_metrics}, f, indent=4)
+        json.dump(result, f, indent=4)
     print(f"Results saved to {out_dir}/metrics.json")
 
-    return test_metrics
+    return {"rmse": rmse, "mae": mae, "mape": mape, "r2": r2}
 
 
 def main():

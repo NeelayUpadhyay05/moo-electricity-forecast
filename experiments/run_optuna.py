@@ -25,19 +25,16 @@ optuna.logging.set_verbosity(optuna.logging.WARNING)
 # ==========================================================
 # Result Saving
 # ==========================================================
-def save_results(out_dir, runtime, val_mse, test_metrics, best_hyperparams, convergence, seed, mode):
+def save_results(out_dir, runtime, test_metrics, best_hyperparams, search_history, seed, mode):
     result = {
         "seed": seed,
         "mode": mode,
-        "best_val_mse": float(val_mse),
-        "best_test_nrmse": float(test_metrics["nrmse"]),
-        "best_test_rmse": float(test_metrics["rmse"]),
-        "best_test_mae": float(test_metrics["mae"]),
-        "best_test_mape": float(test_metrics["mape"]),
-        "best_complexity": int(best_hyperparams["complexity"]),
-        "objectives": ["val_mse"],
+        "test_rmse": float(test_metrics["rmse"]),
+        "test_mae": float(test_metrics["mae"]),
+        "test_mape": float(test_metrics["mape"]),
+        "test_r2": float(test_metrics["r2"]),
         "best_hyperparams": best_hyperparams,
-        "convergence": [float(v) for v in convergence],
+        "search_history": search_history,
     }
     with open(os.path.join(out_dir, "metrics.json"), "w") as f:
         json.dump(result, f, indent=4)
@@ -162,21 +159,19 @@ def run_optuna(train_df, val_df, test_df, scaling_params, device, config, seed=4
     save_results(
         out_dir=out_dir,
         runtime=runtime,
-        val_mse=float(best_trial.values[0]),
         test_metrics=test_metrics,
         best_hyperparams={
             "hidden_dim": best_config.hidden_dim,
             "num_layers": best_config.num_layers,
             "lr": best_config.lr,
             "dropout": best_config.dropout,
-            "complexity": int(best_trial.values[1]),
         },
-        convergence=convergence,
+        search_history=search_history,
         seed=seed,
         mode=config.mode,
     )
 
-    return float(best_trial.values[0]), test_metrics["nrmse"], runtime
+    return float(best_trial.value), test_metrics["rmse"], runtime
 
 
 # ==========================================================

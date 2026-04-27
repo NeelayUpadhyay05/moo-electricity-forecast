@@ -1,283 +1,144 @@
-# Electricity Load Forecasting: Multi-Model Benchmark
 
-A comprehensive comparison of eight forecasting methods for univariate electricity load prediction: two multi-objective LSTM variants (Musk Ox, NSGA-II), three single-objective LSTM variants (Baseline, Random Search, Optuna), and three direct predictive models (ARIMA, LightGBM, CNN-LSTM).
+# MOO-Electricity-Forecast
 
-All LSTM-based methods (search and non-search) are evaluated under fair, consistent hyperparameter budgets across multiple zones and seeds. In `full` mode, each search optimizer uses a 200-evaluation budget.
+Research benchmark for hourly univariate electricity-load forecasting. The repository compares eight forecasting methods across multiple zones and seeds, with consistent evaluation budgets and dedicated multi-objective analyses.
 
----
-
-## Methods Compared
-
-### LSTM-Based (Hyperparameter-Optimized)
-
-| Method | Objective(s) | Description |
-|--------|---------|----------|
-| **Baseline LSTM** | val_mse | Fixed default hyperparameters — no search |
-| **Musk Ox LSTM** | val_mse, complexity | Population-based MOEA with Gaussian perturbation and external archive |
-| **Random Search LSTM** | val_mse | Uniform random sampling; selects best by validation MSE |
-| **Optuna LSTM** | val_mse | Single-objective TPE optimizer |
-| **NSGA-II LSTM** | val_mse, complexity | NSGA-II multi-objective evolutionary algorithm |
-
-### Direct Predictive Models (Non-LSTM)
-
-| Method | Description |
-|--------|----------|
-| **ARIMA** | Classical statistical forecasting with autoregression |
-| **LightGBM** | Gradient boosting on 24-hour lag features |
-| **CNN-LSTM Hybrid** | 1D CNN feature extraction + LSTM temporal modeling |
-
-### Budget Alignment
-
-Searched LSTM methods share **equal evaluation budgets** in `full` mode: `Musk Ox pop 10 × gen 20 = 200 evals`, `Random 200 trials`, `Optuna 200 trials`, and `NSGA-II pop 10 × gen 20 = 200 evals`. Only **Musk Ox and NSGA-II** optimize a multi-objective landscape; others are single-objective (minimize validation MSE only). Baseline, ARIMA, LightGBM, and CNN-LSTM are non-search methods.
+Highlights
+- Eight methods: two multi-objective (Musk Ox MO-LSTM, NSGA-II) and six single-objective / direct predictors.
+- Standardized results saved per seed and zone under `results/seed_{n}/{zone}/`.
+- Analysis notebook `notebooks/analysis_v2.ipynb` performs Friedman/Nemenyi, Wilcoxon tests, dominance checks, and knee-point selection.
 
 ---
 
-## Dataset
+## Methods
 
-**PJM Hourly Energy Consumption** — real-world hourly electricity load (MW) from PJM Interconnection, a US regional transmission organization.
+Multi-objective methods (optimize `val_mse` and `complexity`):
 
-- Source: [Kaggle — Rob Mulla](https://www.kaggle.com/datasets/robikscube/hourly-energy-consumption)
-- Raw files: `data/raw/PJM/` (not tracked by git)
-- Format: two columns — `Datetime` and `{ZONE}_MW`
-- Frequency: hourly
-- Target: univariate load (MW), no exogenous features
+- `musk_ox_multi_lstm` — Musk Ox MOEA (our MO-LSTM implementation)
+- `nsga2_direct` — NSGA-II baseline
 
-**Zones used in experiments:**
+Single-objective or direct predictive methods (optimize `val_mse` or are fixed models):
 
-| Zone | Rows | Span | Mean Load (MW) |
-|------|------|------|----------------|
-| PJME | 145,366 | 2002–2018 | ~32,400 |
-| AEP | 121,273 | 2004–2018 | ~15,800 |
-| DAYTON | 121,275 | 2004–2018 | ~2,050 |
+- `baseline_lstm` — fixed LSTM (no search)
+- `optuna_lstm` — Optuna (single-objective TPE)
+- `random_search_lstm` — random search over the LSTM space
+- `arima` — ARIMA statistical model
+- `lightgbm` — LightGBM on lag features
+- `cnn_lstm` — CNN-LSTM hybrid
 
-Three zones were selected to cover a wide range of load magnitudes (small / medium / large), demonstrating generalizability across different regional profiles.
-
-**NYISO Hourly Actual Load** — real-world hourly electricity load (MW) from NYISO, a US regional transmission organization.
-
-- Source: [EIA collected from NYISO](https://www.eia.gov/electricity/gridmonitor/)
-- Raw files: `data/raw/NYISO/` (not tracked by git)
-- Format: yearly wide CSV files with UTC/local timestamps and regional load columns
-- Frequency: hourly
-- Target: univariate load (MW), no exogenous features
-
-**Regions used in experiments:**
-
-| Region | Rows | Span | Mean Load (MW) |
-|--------|------|------|----------------|
-| NEW_YORK_CITY | 33,736 | 2021–2025 | ~5,608 |
-| LONG_ISLAND | 33,736 | 2021–2025 | ~2,253 |
-| CENTRAL | 33,736 | 2021–2025 | ~1,709 |
-
-Three regions were selected to cover a wide range of load magnitudes (small / medium / large), demonstrating generalizability across different regional profiles.
-
-The yearly NYISO files are concatenated first, then the top 3 regions are selected automatically by signal strength and completeness before being written to `data/processed/`.
-
-**Train / Val / Test split** (chronological, no shuffling):
-
-| Split | Proportion | Purpose |
-|-------|-----------|---------|
-| Train | 70% | LSTM training and HPO fitness evaluation |
-| Val   | 15% | HPO objective (validation MSE) |
-| Test  | 15% | Final held-out evaluation — never seen during HPO |
+Only `musk_ox_multi_lstm` and `nsga2_direct` produce Pareto fronts and multi-objective outputs; the remaining methods are evaluated as single-objective models.
 
 ---
 
-## Model
+## Datasets & Zones
 
-**Univariate LSTM** trained on a sliding window of past load values to forecast the next hour.
+Processed data lives in `data/processed/`. Typical zone examples used in experiments:
 
-- Input: sequence of `seq_len=24` hourly observations `(batch, 24, 1)`
-- Output: single next-hour forecast `(batch, 1)`
-- Normalization: z-score (mean/std from training split only)
-- Training: Adam optimizer + early stopping on validation MSE
+- PJM: `PJME`, `AEP`, `DAYTON`
+- NYISO: `NEW_YORK_CITY`, `LONG_ISLAND`, `CENTRAL`
 
-**Hyperparameter search space (4D):**
-
-| Hyperparameter | Range | Scale |
-|---|---|---|
-| `hidden_dim` | [32, 256] | Integer |
-| `num_layers` | [1, 3] | Integer |
-| `lr` | [1e-4, 5e-3] | Log-continuous |
-| `dropout` | [0.0, 0.3] | Continuous |
+Splits are chronological (no shuffle): train 70% / val 15% / test 15%.
 
 ---
 
-## Evaluation Metrics
+## Metrics
 
-All methods are evaluated on the held-out test set using the model retrained with the best hyperparameters found during search:
+Reported metrics (saved to `metrics.json` for each run):
 
-| Metric | Description |
-|---|---|
-| NRMSE | Normalized RMSE (RMSE / mean load) — primary comparison metric |
-| RMSE | Root Mean Squared Error (MW) |
-| MAE | Mean Absolute Error (MW) |
-| MAPE | Mean Absolute Percentage Error (%) |
+- `rmse` — Root Mean Squared Error (MW)
+- `mae` — Mean Absolute Error (MW)
+- `mape` — Mean Absolute Percentage Error (%)
+- `r2` — Coefficient of determination
+- `hypervolume` — for multi-objective Pareto fronts
+
+The analysis notebook primarily uses `mape` and average ranks for statistical comparisons and includes hypervolume and dominance checks for multi-objective methods.
 
 ---
 
-## Project Structure
+## Layout (summary)
 
 ```
-MOO-Electricity-Forecast/
-├── data/
-│   ├── raw/
-│   │   └── PJM/                          # raw CSVs (not tracked by git)
-│   │       ├── PJME_hourly.csv
-│   │       ├── AEP_hourly.csv
-│   │       ├── DAYTON_hourly.csv
-│   │       └── ...
-│   └── processed/                        # preprocessed splits per zone
-│       ├── {zone}_train.csv
-│       ├── {zone}_val.csv
-│       ├── {zone}_test.csv
-│       └── {zone}_scaling.json
-├── checkpoints/
-│   ├── seed_{n}/{zone}/                  # checkpoints from main comparison
-├── results/
-│   ├── seed_{n}/{zone}/                  # main equal-budget comparison results
-│   │   ├── baseline/metrics.json
-│   │   ├── musk_ox/
-│   │   │   ├── metrics.json
-│   │   │   └── pareto_front.csv
-│   │   ├── random_search/metrics.json
-│   │   ├── optuna/metrics.json
-│   │   ├── nsga2/
-│   │   │   ├── metrics.json
-│   │   │   └── pareto_front.csv
-│   │   ├── arima/metrics.json
-│   │   ├── lightgbm/metrics.json
-│   │   ├── cnn_lstm/metrics.json
-│   │   └── summary.json
-├── experiments/
-│   ├── run_all.py                        # orchestrator: runs all 8 models, aggregates results
-│   ├── run_baseline.py                   # baseline LSTM
-│   ├── run_moo.py                        # Musk Ox LSTM (multi-objective)
-│   ├── run_random_search.py              # random search LSTM (single-objective)
-│   ├── run_optuna.py                     # Optuna LSTM (single-objective)
-│   ├── run_nsga2.py                      # NSGA-II LSTM (multi-objective)
-│   ├── run_arima.py                      # ARIMA statistical method
-│   ├── run_lightgbm.py                   # LightGBM gradient boosting
-│   └── run_cnn_lstm.py                   # CNN-LSTM hybrid
-├── src/
-│   ├── config.py                         # all hyperparameters, model registry, and mode settings
-│   ├── models/
-│   │   ├── lstm.py                       # LSTM model definition
-│   │   ├── arima.py                      # ARIMA (statsmodels wrapper)
-│   │   ├── lightgbm_model.py             # LightGBM training/prediction
-│   │   └── cnn_lstm.py                   # CNN-LSTM hybrid PyTorch model
-│   ├── data/
-│   │   ├── dataset.py                    # PyTorch Dataset (sliding window)
-│   │   ├── preprocess.py                 # PJM preprocessing pipeline
-│   │   └── run_preprocessing.py          # preprocessing entry point
-│   ├── optimizers/
-│   │   ├── musk_ox.py                    # Musk Ox multi-objective optimizer
-│   │   └── nsga2.py                      # NSGA-II multi-objective optimizer
-│   ├── training/
-│   │   ├── trainer.py                    # train_one_epoch / validate
-│   │   ├── training_pipeline.py          # train_single_configuration / retrain_and_evaluate
-│   │   ├── fitness.py                    # fitness functions for PSO and MOO
-│   │   └── early_stopping.py             # early stopping with checkpoint saving
-│   └── utils/
-│       └── seed.py                       # reproducibility (Python, NumPy, PyTorch)
-├── main.py                               # runs all 5 methods for one seed/zone
-├── requirements.txt
-└── README.md
+experiments/        # run_all.py + per-method runners
+src/                # models, training, data, optimizers
+data/               # raw/ and processed/ datasets
+results/            # per-seed per-zone outputs and pareto_front.csv for MOO
+checkpoints/        # saved checkpoints per seed/zone
+notebooks/          # analysis notebooks
+plots/              # exported figures
+tables/             # CSV summaries
+README.md
+requirements.txt
 ```
+
+Per-run outputs: `results/seed_{n}/{zone}/{method}/metrics.json`. Multi-objective runs include `pareto_front.csv`.
 
 ---
 
-## Setup
+## Quick start
+
+1. Install dependencies:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-Download PJM CSV files from Kaggle and place them in `data/raw/PJM/`.
-
----
-
-## Preprocessing
-
-Run once per zone before any experiments:
+2. Preprocess data (examples):
 
 ```bash
 python -m src.data.run_preprocessing --zone PJME
 python -m src.data.run_preprocessing --zone AEP
 python -m src.data.run_preprocessing --zone DAYTON
-```
 
-For NYISO, use:
-
-```bash
+# NYISO preprocessing
 python -m src.data.run_preprocessing --dataset nyiso --data_dir data/raw/NYISO
 ```
 
-This will save the selected region CSVs under `data/processed/nyiso_selected/` and the final train/val/test splits under `data/processed/`.
-
----
-
-## Running Experiments
-
-### Full benchmark (all 8 models, one seed + zone)
+3. Run the benchmark (single seed & zone):
 
 ```bash
 python experiments/run_all.py --seed 42 --mode full --zone PJME
 ```
 
-This orchestrator runs all methods in sequence and aggregates results into a summary table + `results/seed_42/PJME/summary.json`.
-
-### Individual methods (LSTM-based search)
+Or run a specific runner (per-method scripts):
 
 ```bash
-python experiments/run_baseline.py       --seed 42 --mode full --zone PJME
-python experiments/run_moo.py            --seed 42 --mode full --zone PJME  # Musk Ox
-python experiments/run_random_search.py  --seed 42 --mode full --zone PJME
-python experiments/run_optuna.py         --seed 42 --mode full --zone PJME
-python experiments/run_nsga2.py          --seed 42 --mode full --zone PJME
+python experiments/run_moo.py --seed 42 --mode full --zone PJME       # Musk Ox (MOO)
+python experiments/run_nsga2.py --seed 42 --mode full --zone PJME     # NSGA-II (MOO)
+python experiments/run_optuna.py --seed 42 --mode full --zone PJME    # Optuna (SO)
+python experiments/run_random_search.py --seed 42 --mode full --zone PJME
+python experiments/run_baseline.py --seed 42 --mode full --zone PJME
+python experiments/run_arima.py --seed 42 --mode full --zone PJME
+python experiments/run_lightgbm.py --seed 42 --mode full --zone PJME
+python experiments/run_cnn_lstm.py --seed 42 --mode full --zone PJME
 ```
 
-### Individual methods (direct predictive models)
-
-```bash
-python experiments/run_arima.py          --seed 42 --mode full --zone PJME
-python experiments/run_lightgbm.py       --seed 42 --mode full --zone PJME
-python experiments/run_cnn_lstm.py       --seed 42 --mode full --zone PJME
-```
-
-### Multi-seed / multi-zone runs
-
-Results are saved under `results/seed_{n}/{zone}/` — different seeds and zones never overwrite each other.
-
-```bash
-# Example: 5 seeds × 3 zones
-for seed in 0 24 42 247 296; do
-  for zone in PJME AEP DAYTON; do
-    python main.py --seed $seed --zone $zone
-  done
-done
-```
+`--mode dev` uses reduced budgets for faster debugging; `--mode full` uses reporting budgets.
 
 ---
 
-### Dev vs Full mode
+## Analysis
 
-| Setting | Dev | Full |
-|---------|-----|------|
-| Batch size | 512 | 2048 |
-| Search epochs (per eval) | 10 + early stop (patience 3) | 20 + early stop (patience 5) |
-| Retrain epochs | 15 | 60 |
-| LSTM search budget | 12 | 200 |
-| Musk Ox population / generations | 4 / 2 | 10 / 20 |
-| NSGA-II population / generations | 4 / 2 | 10 / 20 |
-| Timesteps (dev truncation) | 2,000 | full dataset |
+Open `notebooks/analysis_v2.ipynb` to reproduce the paper-quality analyses:
 
-`dev` mode is for rapid debugging. All reported results use `full` mode.
+- Friedman test + Nemenyi post-hoc (global ranking)
+- Wilcoxon (Mann–Whitney U) pairwise tests (MO-LSTM vs others) with FDR correction
+- Pareto dominance checks (MO-LSTM vs NSGA-II)
+- Knee-point selection for representative multi-objective solutions
+
+The notebook exports tables to `tables/` and plots to `plots/`.
 
 ---
 
 ## Reproducibility
 
-All experiments seed Python, NumPy, and PyTorch via `set_seed(seed)`. CuDNN deterministic mode is enabled when CUDA is available. Results are saved per seed and zone under `results/seed_{n}/{zone}/` and `checkpoints/seed_{n}/{zone}/`.
+- Seeds are set for Python / NumPy / PyTorch via `src/utils/seed.py`.
+- All runs save results to `results/seed_{n}/{zone}/` and checkpoints to `checkpoints/seed_{n}/{zone}/`.
+
+---
+
+## Contributing
+
+To add a method: add a runner under `experiments/`, a training wrapper under `src/`, and update `src/config.py` to register the method. Please open an issue first for design discussion.
 
 ---
 

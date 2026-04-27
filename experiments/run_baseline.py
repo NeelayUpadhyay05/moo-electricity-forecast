@@ -19,17 +19,15 @@ from src.config import Config
 # ==========================================================
 # Result Saving
 # ==========================================================
-def save_results(out_dir, runtime, val_mse, test_metrics, best_hyperparams, convergence, seed, mode):
+def save_results(out_dir, runtime, test_metrics, best_hyperparams, seed, mode):
     result = {
         "seed": seed,
         "mode": mode,
-        "best_val_mse": float(val_mse),
-        "best_test_nrmse": float(test_metrics["nrmse"]),
-        "best_test_rmse": float(test_metrics["rmse"]),
-        "best_test_mae": float(test_metrics["mae"]),
-        "best_test_mape": float(test_metrics["mape"]),
+        "test_rmse": float(test_metrics["rmse"]),
+        "test_mae": float(test_metrics["mae"]),
+        "test_mape": float(test_metrics["mape"]),
+        "test_r2": float(test_metrics["r2"]),
         "best_hyperparams": best_hyperparams,
-        "convergence": [float(v) for v in convergence],
     }
     with open(os.path.join(out_dir, "metrics.json"), "w") as f:
         json.dump(result, f, indent=4)
@@ -92,17 +90,15 @@ def run_baseline(train_df, val_df, test_df, scaling_params, device, config, seed
     save_results(
         out_dir=out_dir,
         runtime=runtime,
-        val_mse=val_mse,
         test_metrics=test_metrics,
         best_hyperparams={
             "hidden_dim": 128, "num_layers": 1, "lr": 0.004, "dropout": 0.0
         },
-        convergence=[],
         seed=seed,
         mode=config.mode,
     )
 
-    return val_mse, test_metrics["nrmse"], runtime
+    return val_mse, test_metrics["rmse"], runtime
 
 
 # ==========================================================

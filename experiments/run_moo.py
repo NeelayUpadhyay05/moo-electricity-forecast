@@ -16,25 +16,26 @@ from src.training.training_pipeline import (
 )
 from src.optimizers.musk_ox import MuskOxOptimizer
 from src.training.fitness import moo_fitness
+from src.metrics import calculate_hypervolume, calculate_igd
 from src.config import Config
 
 
 # ==========================================================
 # Result Saving
 # ==========================================================
-def save_results(out_dir, runtime, val_mse, test_metrics, best_hyperparams, convergence, seed, mode):
+def save_results(out_dir, runtime, test_metrics, best_hyperparams, pareto_objectives, seed, mode):
+    hv = calculate_hypervolume(pareto_objectives)
+    
     result = {
         "seed": seed,
         "mode": mode,
-        "best_val_mse": float(val_mse),
-        "best_test_nrmse": float(test_metrics["nrmse"]),
-        "best_test_rmse": float(test_metrics["rmse"]),
-        "best_test_mae": float(test_metrics["mae"]),
-        "best_test_mape": float(test_metrics["mape"]),
-        "best_complexity": int(best_hyperparams["complexity"]),
+        "test_rmse": float(test_metrics["rmse"]),
+        "test_mae": float(test_metrics["mae"]),
+        "test_mape": float(test_metrics["mape"]),
+        "test_r2": float(test_metrics["r2"]),
+        "hypervolume": float(hv),
         "objectives": ["val_mse", "complexity"],
         "best_hyperparams": best_hyperparams,
-        "convergence": [float(v) for v in convergence],
     }
     with open(os.path.join(out_dir, "metrics.json"), "w") as f:
         json.dump(result, f, indent=4)
@@ -131,8 +132,7 @@ def run_moo(train_df, val_df, test_df, scaling_params, device, config, seed=42, 
     out_dir = f"results/seed_{seed}/{zone}/musk_ox"
     os.makedirs(out_dir, exist_ok=True)
 
-    # Save Pareto front (val_mse / complexity only — test metrics intentionally
-    # omitted for non-winning solutions to avoid extra training budget)
+    # Save Pareto front (val_mse / complexity only)
     pareto_rows = [
         {
             "hidden_dim": e["hyperparams"]["hidden_dim"],
@@ -147,27 +147,28 @@ def run_moo(train_df, val_df, test_df, scaling_params, device, config, seed=42, 
     pd.DataFrame(pareto_rows).to_csv(
         os.path.join(out_dir, "pareto_front.csv"), index=False
     )
+    
+    # Extract pareto objectives for hypervolume calculation
+    pareto_objs = np.array([[e["val_mse"], e["complexity"]] for e in evaluated])
 
     save_results(
         out_dir=out_dir,
         runtime=runtime,
-        val_mse=best_val_solution["val_mse"],
         test_metrics=test_metrics,
         best_hyperparams={
             "hidden_dim": best_hp["hidden_dim"],
             "num_layers": best_hp["num_layers"],
             "lr": best_hp["lr"],
             "dropout": best_hp["dropout"],
-            "complexity": int(best_val_solution["complexity"]),
         },
-        convergence=history,
+        pareto_objectives=pareto_objs,
         seed=seed,
         mode=config.mode,
     )
 
     return (
         best_val_solution["val_mse"],
-        test_metrics["nrmse"],
+        test_metrics["rmse"],
         runtime
     )
 

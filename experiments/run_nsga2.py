@@ -16,25 +16,26 @@ from src.training.training_pipeline import (
 )
 from src.optimizers.nsga2 import NSGA2
 from src.training.fitness import moo_fitness
+from src.metrics import calculate_hypervolume, calculate_igd
 from src.config import Config
 
 
 # ==========================================================
 # Result Saving
 # ==========================================================
-def save_results(out_dir, runtime, val_mse, test_metrics, best_hyperparams, convergence, seed, mode):
+def save_results(out_dir, runtime, test_metrics, best_hyperparams, pareto_objectives, seed, mode):
+    hv = calculate_hypervolume(pareto_objectives)
+    
     result = {
         "seed": seed,
         "mode": mode,
-        "best_val_mse": float(val_mse),
-        "best_test_nrmse": float(test_metrics["nrmse"]),
-        "best_test_rmse": float(test_metrics["rmse"]),
-        "best_test_mae": float(test_metrics["mae"]),
-        "best_test_mape": float(test_metrics["mape"]),
-        "best_complexity": int(best_hyperparams["complexity"]),
+        "test_rmse": float(test_metrics["rmse"]),
+        "test_mae": float(test_metrics["mae"]),
+        "test_mape": float(test_metrics["mape"]),
+        "test_r2": float(test_metrics["r2"]),
+        "hypervolume": float(hv),
         "objectives": ["val_mse", "complexity"],
         "best_hyperparams": best_hyperparams,
-        "convergence": [float(v) for v in convergence],
     }
     with open(os.path.join(out_dir, "metrics.json"), "w") as f:
         json.dump(result, f, indent=4)
@@ -143,10 +144,11 @@ def run_nsga2(train_df, val_df, test_df, scaling_params, device, config, seed=42
         os.path.join(out_dir, "pareto_front.csv"), index=False
     )
 
+    pareto_objectives = [[e["val_mse"], e["complexity"]] for e in evaluated]
+    
     save_results(
         out_dir=out_dir,
         runtime=runtime,
-        val_mse=best_val_solution["val_mse"],
         test_metrics=test_metrics,
         best_hyperparams={
             "hidden_dim": best_hp["hidden_dim"],
@@ -155,14 +157,14 @@ def run_nsga2(train_df, val_df, test_df, scaling_params, device, config, seed=42
             "dropout": best_hp["dropout"],
             "complexity": int(best_val_solution["complexity"]),
         },
-        convergence=history,
+        pareto_objectives=pareto_objectives,
         seed=seed,
         mode=config.mode,
     )
 
     return (
         best_val_solution["val_mse"],
-        test_metrics["nrmse"],
+        test_metrics["rmse"],
         runtime
     )
 
@@ -185,9 +187,9 @@ def main():
         train_df, val_df, test_df, scaling_params, device, config, seed=args.seed, zone=args.zone
     )
 
-    print(f"\n{'Method':<15}{'Val MSE':<15}{'Test NRMSE':<15}{'Time (s)':<15}")
+    print(f"\n{'Method':<15}{'Val MSE':<15}{'Test RMSE':<15}{'Time (s)':<15}")
     print("-" * 60)
-    print(f{"NSGA-II":<15}{val_mse:<15.6f}{test_rmse:<15.6f}{runtime:<15.2f})
+    print(f"{'NSGA-II':<15}{val_mse:<15.6f}{test_rmse:<15.6f}{runtime:<15.2f}")
 
 
 if __name__ == "__main__":

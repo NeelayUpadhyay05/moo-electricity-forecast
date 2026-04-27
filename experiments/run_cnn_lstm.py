@@ -12,20 +12,9 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 
 from src.models.cnn_lstm import CNNLSTM
+from src.metrics import calculate_rmse, calculate_mae, calculate_mape, calculate_r2  
 from src.config import Config
 from src.utils.seed import set_seed
-
-
-def metrics(preds, targets, scaling_params):
-    mean = scaling_params["mean"]
-    std = scaling_params["std"]
-    preds_n = (preds - mean) / std
-    targets_n = (targets - mean) / std
-    nrmse = float(np.sqrt(np.mean((preds_n - targets_n) ** 2)))
-    rmse = float(np.sqrt(np.mean((preds - targets) ** 2)))
-    mae = float(np.mean(np.abs(preds - targets)))
-    mape = float(np.mean(np.abs(preds - targets) / np.clip(np.abs(targets), 1.0, None)) * 100)
-    return {"nrmse": nrmse, "rmse": rmse, "mae": mae, "mape": mape}
 
 
 def make_dataset(series, seq_len):
@@ -56,16 +45,19 @@ def run_cnn_lstm(train_df, val_df, test_df, scaling_params, device, config, seed
     start = time.time()
 
     seq_len = config.seq_len
+    mean = scaling_params["mean"]
+    std = scaling_params["std"]
+    
     train_series = train_df.iloc[:, 0].values
     val_series = val_df.iloc[:, 0].values
     test_series = test_df.iloc[:, 0].values
 
     X_train, y_train = make_dataset(np.concatenate([train_series, val_series]), seq_len)
-    X_test, y_test = make_dataset(np.concatenate([train_series, val_series, test_series]), seq_len)
+    X_test_all, y_test_all = make_dataset(np.concatenate([train_series, val_series, test_series]), seq_len)
     # test portion at end
     start_idx = len(train_series) + len(val_series) - seq_len
-    X_test = X_test[start_idx: start_idx + len(test_series)]
-    y_test = y_test[start_idx: start_idx + len(test_series)]
+    X_test = X_test_all[start_idx: start_idx + len(test_series)]
+    y_test = y_test_all[start_idx: start_idx + len(test_series)]
 
     train_tensor = TensorDataset(torch.from_numpy(X_train).float(), torch.from_numpy(y_train).float())
     train_loader = DataLoader(train_tensor, batch_size=config.batch_size, shuffle=True)
@@ -95,16 +87,32 @@ def run_cnn_lstm(train_df, val_df, test_df, scaling_params, device, config, seed
         X_test_t = torch.from_numpy(X_test).float().to(device)
         preds = model(X_test_t).cpu().numpy()
 
-    test_metrics = metrics(preds, y_test, scaling_params)
+    # Compute metrics
+    rmse = calculate_rmse(preds, y_test)
+    mae = calculate_mae(preds, y_test)
+    mape = calculate_mape(preds, y_test)
+    
+    preds_norm = (preds - mean) / std
+    y_test_norm = (y_test - mean) / std
+    r2 = calculate_r2(preds_norm, y_test_norm)
 
     runtime = time.time() - start
     out_dir = f"results/seed_{seed}/{zone}/cnn_lstm"
     os.makedirs(out_dir, exist_ok=True)
+    result = {
+        "seed": seed,
+        "mode": config.mode,
+        "test_rmse": float(rmse),
+        "test_mae": float(mae),
+        "test_mape": float(mape),
+        "test_r2": float(r2),
+        "runtime": runtime,
+    }
     with open(os.path.join(out_dir, "metrics.json"), "w") as f:
-        json.dump({"runtime": runtime, **test_metrics}, f, indent=4)
+        json.dump(result, f, indent=4)
     print(f"Results saved to {out_dir}/metrics.json")
 
-    return test_metrics
+    return {"rmse": rmse, "mae": mae, "mape": mape, "r2": r2}
 
 
 def main():

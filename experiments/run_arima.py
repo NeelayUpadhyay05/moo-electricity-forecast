@@ -9,21 +9,9 @@ import numpy as np
 import pandas as pd
 
 from src.models.arima import fit_arima, forecast_arima
+from src.metrics import calculate_rmse, calculate_mae, calculate_mape, calculate_r2
 from src.config import Config
 from src.utils.seed import set_seed
-
-
-def metrics(preds, targets, scaling_params):
-    mean = scaling_params["mean"]
-    std = scaling_params["std"]
-    # normalize
-    preds_n = (preds - mean) / std
-    targets_n = (targets - mean) / std
-    nrmse = float(np.sqrt(np.mean((preds_n - targets_n) ** 2)))
-    rmse = float(np.sqrt(np.mean((preds - targets) ** 2)))
-    mae = float(np.mean(np.abs(preds - targets)))
-    mape = float(np.mean(np.abs(preds - targets) / np.clip(np.abs(targets), 1.0, None)) * 100)
-    return {"nrmse": nrmse, "rmse": rmse, "mae": mae, "mape": mape}
 
 
 def load_data(config, zone="PJME"):
@@ -45,25 +33,42 @@ def run_arima(train_df, val_df, test_df, scaling_params, config, seed=42, zone="
     print("\n================ ARIMA =================")
     start = time.time()
 
-    # Fit on combined train+val to mirror retrain behavior
+    mean = scaling_params["mean"]
+    std = scaling_params["std"]
+    
     combined = pd.concat([train_df, val_df]).iloc[:, 0].values
     test_vals = test_df.iloc[:, 0].values
 
     fitted = fit_arima(combined, order=(5, 1, 0))
     preds = forecast_arima(fitted, steps=len(test_vals))
 
-    # Predictions are in original scale; compute metrics
-    test_metrics = metrics(preds, test_vals, scaling_params)
+    # Compute metrics
+    rmse = calculate_rmse(preds, test_vals)
+    mae = calculate_mae(preds, test_vals)
+    mape = calculate_mape(preds, test_vals)
+    
+    preds_norm = (preds - mean) / std
+    test_norm = (test_vals - mean) / std
+    r2 = calculate_r2(preds_norm, test_norm)
 
     runtime = time.time() - start
 
     out_dir = f"results/seed_{seed}/{zone}/arima"
     os.makedirs(out_dir, exist_ok=True)
+    result = {
+        "seed": seed,
+        "mode": config.mode,
+        "test_rmse": float(rmse),
+        "test_mae": float(mae),
+        "test_mape": float(mape),
+        "test_r2": float(r2),
+        "runtime": runtime,
+    }
     with open(os.path.join(out_dir, "metrics.json"), "w") as f:
-        json.dump({"runtime": runtime, **test_metrics}, f, indent=4)
+        json.dump(result, f, indent=4)
     print(f"Results saved to {out_dir}/metrics.json")
 
-    return test_metrics
+    return {"rmse": rmse, "mae": mae, "mape": mape, "r2": r2}
 
 
 def main():
