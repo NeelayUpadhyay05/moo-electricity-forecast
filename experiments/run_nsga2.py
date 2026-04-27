@@ -14,8 +14,8 @@ from src.training.training_pipeline import (
     train_single_configuration,
     retrain_and_evaluate
 )
-from src.optimizers.pso import PSO
-from src.training.fitness import pso_fitness
+from src.optimizers.nsga2 import NSGA2
+from src.training.fitness import moo_fitness
 from src.config import Config
 
 
@@ -64,72 +64,57 @@ def load_data(config, zone="PJME"):
 
 
 # ==========================================================
-# PSO
+# NSGA-II Runner
 # ==========================================================
-def run_pso(train_df, val_df, test_df, scaling_params, device, config, seed=42, zone="PJME"):
+def run_nsga2(train_df, val_df, test_df, scaling_params, device, config, seed=42, zone="PJME"):
 
     set_seed(seed)
-    print("\n================ PSO =================")
+    print("\n================ NSGA-II =================")
     start = time.time()
 
     b = config.hp_bounds
     bounds = [
-        b["hidden_dim"],
-        [b["num_layers"][0] - 0.5, b["num_layers"][1] + 0.5],  # ±0.5 offset: equal probability for each integer after round+clip
-        [np.log10(b["lr"][0]), np.log10(b["lr"][1])],
-        b["dropout"],
+        tuple(b["hidden_dim"]),
+        (b["num_layers"][0] - 0.5, b["num_layers"][1] + 0.5),
+        (np.log10(b["lr"][0]), np.log10(b["lr"][1])),
+        tuple(b["dropout"]),
     ]
 
-    pso_search_history = []
-
-    def tracked_fitness(particle):
-        score = pso_fitness(particle, train_df, val_df, device, mode=config.mode)
-        b = config.hp_bounds
-        pso_search_history.append({
-            "eval":       len(pso_search_history) + 1,
-            "hidden_dim": int(np.clip(np.round(particle[0]), b["hidden_dim"][0], b["hidden_dim"][1])),
-            "num_layers": int(np.clip(np.round(particle[1]), b["num_layers"][0], b["num_layers"][1])),
-            "lr":         float(np.clip(10 ** particle[2], b["lr"][0], b["lr"][1])),
-            "dropout":    float(np.clip(particle[3], b["dropout"][0], b["dropout"][1])),
-            "val_mse":    float(score[0]),
-            "complexity": int(score[1]),
-        })
-        return score
-
-    pso = PSO(
-        fitness_fn=tracked_fitness,
+    nsga = NSGA2(
+        fitness_fn=lambda particle: moo_fitness(
+            particle, train_df, val_df, device, mode=config.mode
+        ),
         bounds=bounds,
-        swarm_size=config.pso_swarm_size,
-        iterations=config.pso_iterations,
-        seed=seed
+        pop_size=config.moo_pop_size,
+        generations=config.moo_generations,
+        seed=seed,
     )
 
-    pareto_solutions, history = pso.optimize()
+    pareto_solutions, history = nsga.optimize()
 
     evaluated = []
     for solution in pareto_solutions:
         hidden_dim, num_layers, lr, dropout = solution["params"]
         evaluated.append({
-            "val_mse": float(solution["val_mse"]),
-            "complexity": int(solution["complexity"]),
+            "val_mse":    solution["val_mse"],
+            "complexity": solution["complexity"],
             "hyperparams": {
-                "hidden_dim": int(np.clip(np.round(hidden_dim), b["hidden_dim"][0], b["hidden_dim"][1])),
-                "num_layers": int(np.clip(np.round(num_layers), b["num_layers"][0], b["num_layers"][1])),
-                "lr": float(np.clip(10 ** lr, b["lr"][0], b["lr"][1])),
-                "dropout": float(np.clip(dropout, b["dropout"][0], b["dropout"][1])),
+                "hidden_dim": int(np.round(hidden_dim)),
+                "num_layers": int(np.round(num_layers)),
+                "lr":         float(10 ** lr),
+                "dropout":    float(dropout),
             },
         })
 
-    # Common fair selection policy: choose minimum validation MSE from Pareto set.
-    best_solution = min(evaluated, key=lambda x: x["val_mse"])
-    best_hp = best_solution["hyperparams"]
+    best_val_solution = min(evaluated, key=lambda x: x["val_mse"])
+    best_hp = best_val_solution["hyperparams"]
 
     best_config = Config(mode=config.mode)
     best_config.hidden_dim = best_hp["hidden_dim"]
     best_config.num_layers = best_hp["num_layers"]
-    best_config.lr = best_hp["lr"]
-    best_config.dropout = best_hp["dropout"]
-    best_config.checkpoint_path = f"checkpoints/seed_{seed}/{zone}/pso_best.pt"
+    best_config.lr         = best_hp["lr"]
+    best_config.dropout    = best_hp["dropout"]
+    best_config.checkpoint_path = f"checkpoints/seed_{seed}/{zone}/nsga2_best.pt"
 
     os.makedirs(os.path.dirname(best_config.checkpoint_path), exist_ok=True)
 
@@ -140,19 +125,17 @@ def run_pso(train_df, val_df, test_df, scaling_params, device, config, seed=42, 
 
     runtime = time.time() - start
 
-    out_dir = f"results/seed_{seed}/{zone}/pso"
+    out_dir = f"results/seed_{seed}/{zone}/nsga2"
     os.makedirs(out_dir, exist_ok=True)
-    pd.DataFrame(pso_search_history).to_csv(
-        os.path.join(out_dir, "search_history.csv"), index=False
-    )
+
     pareto_rows = [
         {
             "hidden_dim": e["hyperparams"]["hidden_dim"],
             "num_layers": e["hyperparams"]["num_layers"],
-            "lr": e["hyperparams"]["lr"],
-            "dropout": e["hyperparams"]["dropout"],
-            "val_mse": e["val_mse"],
-            "complexity": e["complexity"],
+            "lr":         e["hyperparams"]["lr"],
+            "dropout":    e["hyperparams"]["dropout"],
+            "val_mse":    float(e["val_mse"]),
+            "complexity": float(e["complexity"]),
         }
         for e in evaluated
     ]
@@ -163,26 +146,27 @@ def run_pso(train_df, val_df, test_df, scaling_params, device, config, seed=42, 
     save_results(
         out_dir=out_dir,
         runtime=runtime,
-        val_mse=best_solution["val_mse"],
+        val_mse=best_val_solution["val_mse"],
         test_metrics=test_metrics,
         best_hyperparams={
-            "hidden_dim": best_config.hidden_dim,
-            "num_layers": best_config.num_layers,
-            "lr": best_config.lr,
-            "dropout": best_config.dropout,
-            "complexity": best_solution["complexity"],
+            "hidden_dim": best_hp["hidden_dim"],
+            "num_layers": best_hp["num_layers"],
+            "lr": best_hp["lr"],
+            "dropout": best_hp["dropout"],
+            "complexity": int(best_val_solution["complexity"]),
         },
         convergence=history,
         seed=seed,
         mode=config.mode,
     )
 
-    return best_solution["val_mse"], test_metrics["nrmse"], runtime
+    return (
+        best_val_solution["val_mse"],
+        test_metrics["nrmse"],
+        runtime
+    )
 
 
-# ==========================================================
-# Main
-# ==========================================================
 def main():
 
     parser = argparse.ArgumentParser()
@@ -197,13 +181,13 @@ def main():
     config = Config(mode=args.mode)
     train_df, val_df, test_df, scaling_params = load_data(config, zone=args.zone)
 
-    val_mse, test_rmse, runtime = run_pso(
+    val_mse, test_rmse, runtime = run_nsga2(
         train_df, val_df, test_df, scaling_params, device, config, seed=args.seed, zone=args.zone
     )
 
     print(f"\n{'Method':<15}{'Val MSE':<15}{'Test NRMSE':<15}{'Time (s)':<15}")
     print("-" * 60)
-    print(f"{'PSO':<15}{val_mse:<15.6f}{test_rmse:<15.6f}{runtime:<15.2f}")
+    print(f{"NSGA-II":<15}{val_mse:<15.6f}{test_rmse:<15.6f}{runtime:<15.2f})
 
 
 if __name__ == "__main__":

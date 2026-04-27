@@ -32,7 +32,7 @@ def save_results(out_dir, runtime, val_mse, test_metrics, best_hyperparams, conv
         "best_test_mae": float(test_metrics["mae"]),
         "best_test_mape": float(test_metrics["mape"]),
         "best_complexity": int(best_hyperparams["complexity"]),
-        "objectives": ["val_mse", "complexity"],
+        "objectives": ["val_mse"],
         "best_hyperparams": best_hyperparams,
         "convergence": [float(v) for v in convergence],
     }
@@ -79,7 +79,8 @@ def run_random_search(train_df, val_df, test_df, scaling_params, device, config,
     best_val = float("inf")
     convergence = []
     search_history = []
-    pareto_archive = []
+    # single-objective search: track best by validation MSE
+    best_solution = None
 
     for trial in range(config.n_trials):
 
@@ -139,23 +140,12 @@ def run_random_search(train_df, val_df, test_df, scaling_params, device, config,
             "complexity": int(complexity),
         }
 
-        candidate = (current["val_mse"], current["complexity"])
-        dominated = False
-        filtered = []
-        for item in pareto_archive:
-            point = (item["val_mse"], item["complexity"])
-            if dominates(point, candidate):
-                dominated = True
-                break
-            if dominates(candidate, point):
-                continue
-            filtered.append(item)
+        # Update best by validation MSE
+        if best_solution is None or current["val_mse"] < best_solution["val_mse"]:
+            best_solution = current
 
-        if not dominated:
-            filtered.append(current)
-            pareto_archive = filtered
-
-    best_solution = min(pareto_archive, key=lambda x: x["val_mse"])
+    if best_solution is None:
+        raise RuntimeError("No trials were run during random search")
 
     print("\nRetraining Best Random Configuration...")
 
@@ -178,9 +168,7 @@ def run_random_search(train_df, val_df, test_df, scaling_params, device, config,
     pd.DataFrame(search_history).to_csv(
         os.path.join(out_dir, "search_history.csv"), index=False
     )
-    pd.DataFrame(pareto_archive).to_csv(
-        os.path.join(out_dir, "pareto_front.csv"), index=False
-    )
+    # pareto front not applicable for single-objective search
     save_results(
         out_dir=out_dir,
         runtime=runtime,

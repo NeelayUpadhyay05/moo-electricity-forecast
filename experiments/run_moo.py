@@ -14,7 +14,7 @@ from src.training.training_pipeline import (
     train_single_configuration,
     retrain_and_evaluate
 )
-from src.optimizers.moo import MOOOptimizer
+from src.optimizers.musk_ox import MuskOxOptimizer
 from src.training.fitness import moo_fitness
 from src.config import Config
 
@@ -80,7 +80,7 @@ def run_moo(train_df, val_df, test_df, scaling_params, device, config, seed=42, 
         tuple(b["dropout"]),
     ]
 
-    moo = MOOOptimizer(
+    moo = MuskOxOptimizer(
         fitness_fn=lambda particle: moo_fitness(
             particle, train_df, val_df, device, mode=config.mode
         ),
@@ -117,7 +117,7 @@ def run_moo(train_df, val_df, test_df, scaling_params, device, config, seed=42, 
     best_config.num_layers = best_hp["num_layers"]
     best_config.lr         = best_hp["lr"]
     best_config.dropout    = best_hp["dropout"]
-    best_config.checkpoint_path = f"checkpoints/seed_{seed}/{zone}/moo_best.pt"
+    best_config.checkpoint_path = f"checkpoints/seed_{seed}/{zone}/musk_ox_best.pt"
 
     os.makedirs(os.path.dirname(best_config.checkpoint_path), exist_ok=True)
 
@@ -128,7 +128,7 @@ def run_moo(train_df, val_df, test_df, scaling_params, device, config, seed=42, 
 
     runtime = time.time() - start
 
-    out_dir = f"results/seed_{seed}/{zone}/moo"
+    out_dir = f"results/seed_{seed}/{zone}/musk_ox"
     os.makedirs(out_dir, exist_ok=True)
 
     # Save Pareto front (val_mse / complexity only — test metrics intentionally

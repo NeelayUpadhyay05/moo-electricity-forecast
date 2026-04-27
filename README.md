@@ -1,22 +1,34 @@
-# Multi-Objective Hyperparameter Optimization for LSTM-Based Electricity Load Forecasting
+# Electricity Load Forecasting: Multi-Model Benchmark
 
-A systematic comparison of hyperparameter optimization (HPO) methods applied to an LSTM model for univariate electricity load forecasting on the PJM dataset.
+A comprehensive comparison of eight forecasting methods for univariate electricity load prediction: two multi-objective LSTM variants (Musk Ox, NSGA-II), three single-objective LSTM variants (Baseline, Random Search, Optuna), and three direct predictive models (ARIMA, LightGBM, CNN-LSTM).
 
-All search-based methods are evaluated under a strictly fair budget across multiple zones and seeds. In `full` mode, each search optimizer runs a 200-evaluation budget setting.
+All LSTM-based methods (search and non-search) are evaluated under fair, consistent hyperparameter budgets across multiple zones and seeds. In `full` mode, each search optimizer uses a 200-evaluation budget.
 
 ---
 
 ## Methods Compared
 
-| Method | Description |
-|--------|-------------|
-| Baseline | Fixed default hyperparameters — no search |
-| Random Search (MO) | Uniform random sampling with Pareto filtering on `(val_mse, complexity)` |
-| Optuna (MO-TPE) | Multi-objective TPE that minimizes `(val_mse, complexity)` |
-| PSO (MOPSO) | Multi-objective particle swarm with Pareto archive and leader sampling |
-| **MOO (NSGA-II)** | **Multi-objective evolutionary search minimizing `(val_mse, complexity)`** |
+### LSTM-Based (Hyperparameter-Optimized)
 
-All search-based methods share an **equal budget** in the main comparison. In `full` mode this is set as: `MOO = pop 10, gen 20`, `MOPSO = swarm 10, iter 20`, `Random = 200 trials`, and `Optuna = 200 trials`. Baseline remains a fixed non-search reference run.
+| Method | Objective(s) | Description |
+|--------|---------|----------|
+| **Baseline LSTM** | val_mse | Fixed default hyperparameters — no search |
+| **Musk Ox LSTM** | val_mse, complexity | Population-based MOEA with Gaussian perturbation and external archive |
+| **Random Search LSTM** | val_mse | Uniform random sampling; selects best by validation MSE |
+| **Optuna LSTM** | val_mse | Single-objective TPE optimizer |
+| **NSGA-II LSTM** | val_mse, complexity | NSGA-II multi-objective evolutionary algorithm |
+
+### Direct Predictive Models (Non-LSTM)
+
+| Method | Description |
+|--------|----------|
+| **ARIMA** | Classical statistical forecasting with autoregression |
+| **LightGBM** | Gradient boosting on 24-hour lag features |
+| **CNN-LSTM Hybrid** | 1D CNN feature extraction + LSTM temporal modeling |
+
+### Budget Alignment
+
+Searched LSTM methods share **equal evaluation budgets** in `full` mode: `Musk Ox pop 10 × gen 20 = 200 evals`, `Random 200 trials`, `Optuna 200 trials`, and `NSGA-II pop 10 × gen 20 = 200 evals`. Only **Musk Ox and NSGA-II** optimize a multi-objective landscape; others are single-objective (minimize validation MSE only). Baseline, ARIMA, LightGBM, and CNN-LSTM are non-search methods.
 
 ---
 
@@ -124,30 +136,42 @@ MOO-Electricity-Forecast/
 ├── results/
 │   ├── seed_{n}/{zone}/                  # main equal-budget comparison results
 │   │   ├── baseline/metrics.json
-│   │   ├── random_search/metrics.json
-│   │   ├── optuna/metrics.json
-│   │   ├── pso/metrics.json
-│   │   ├── moo/
+│   │   ├── musk_ox/
 │   │   │   ├── metrics.json
 │   │   │   └── pareto_front.csv
-│   │   └── comparison.json
+│   │   ├── random_search/metrics.json
+│   │   ├── optuna/metrics.json
+│   │   ├── nsga2/
+│   │   │   ├── metrics.json
+│   │   │   └── pareto_front.csv
+│   │   ├── arima/metrics.json
+│   │   ├── lightgbm/metrics.json
+│   │   ├── cnn_lstm/metrics.json
+│   │   └── summary.json
 ├── experiments/
-│   ├── run_baseline.py                   # fixed-config baseline
-│   ├── run_random_search.py              # random search
-│   ├── run_optuna.py                     # Optuna (TPE)
-│   ├── run_pso.py                        # PSO
-│   └── run_moo.py                        # MOO (NSGA-II) under equal budget
+│   ├── run_all.py                        # orchestrator: runs all 8 models, aggregates results
+│   ├── run_baseline.py                   # baseline LSTM
+│   ├── run_moo.py                        # Musk Ox LSTM (multi-objective)
+│   ├── run_random_search.py              # random search LSTM (single-objective)
+│   ├── run_optuna.py                     # Optuna LSTM (single-objective)
+│   ├── run_nsga2.py                      # NSGA-II LSTM (multi-objective)
+│   ├── run_arima.py                      # ARIMA statistical method
+│   ├── run_lightgbm.py                   # LightGBM gradient boosting
+│   └── run_cnn_lstm.py                   # CNN-LSTM hybrid
 ├── src/
-│   ├── config.py                         # all hyperparameters and mode settings
+│   ├── config.py                         # all hyperparameters, model registry, and mode settings
 │   ├── models/
-│   │   └── lstm.py                       # LSTM model definition
+│   │   ├── lstm.py                       # LSTM model definition
+│   │   ├── arima.py                      # ARIMA (statsmodels wrapper)
+│   │   ├── lightgbm_model.py             # LightGBM training/prediction
+│   │   └── cnn_lstm.py                   # CNN-LSTM hybrid PyTorch model
 │   ├── data/
 │   │   ├── dataset.py                    # PyTorch Dataset (sliding window)
 │   │   ├── preprocess.py                 # PJM preprocessing pipeline
 │   │   └── run_preprocessing.py          # preprocessing entry point
 │   ├── optimizers/
-│   │   ├── pso.py                        # PSO with boundary velocity reset
-│   │   └── moo.py                        # NSGA-II (SBX crossover + polynomial mutation)
+│   │   ├── musk_ox.py                    # Musk Ox multi-objective optimizer
+│   │   └── nsga2.py                      # NSGA-II multi-objective optimizer
 │   ├── training/
 │   │   ├── trainer.py                    # train_one_epoch / validate
 │   │   ├── training_pipeline.py          # train_single_configuration / retrain_and_evaluate
@@ -194,20 +218,30 @@ This will save the selected region CSVs under `data/processed/nyiso_selected/` a
 
 ## Running Experiments
 
-### Main comparison (all 5 methods, one seed + zone)
+### Full benchmark (all 8 models, one seed + zone)
 
 ```bash
-python main.py --seed 42 --mode full --zone PJME
+python experiments/run_all.py --seed 42 --mode full --zone PJME
 ```
 
-### Individual methods
+This orchestrator runs all methods in sequence and aggregates results into a summary table + `results/seed_42/PJME/summary.json`.
+
+### Individual methods (LSTM-based search)
 
 ```bash
-python experiments/run_baseline.py      --seed 42 --mode full --zone PJME
-python experiments/run_random_search.py --seed 42 --mode full --zone PJME
-python experiments/run_optuna.py        --seed 42 --mode full --zone PJME
-python experiments/run_pso.py           --seed 42 --mode full --zone PJME
-python experiments/run_moo.py           --seed 42 --mode full --zone PJME
+python experiments/run_baseline.py       --seed 42 --mode full --zone PJME
+python experiments/run_moo.py            --seed 42 --mode full --zone PJME  # Musk Ox
+python experiments/run_random_search.py  --seed 42 --mode full --zone PJME
+python experiments/run_optuna.py         --seed 42 --mode full --zone PJME
+python experiments/run_nsga2.py          --seed 42 --mode full --zone PJME
+```
+
+### Individual methods (direct predictive models)
+
+```bash
+python experiments/run_arima.py          --seed 42 --mode full --zone PJME
+python experiments/run_lightgbm.py       --seed 42 --mode full --zone PJME
+python experiments/run_cnn_lstm.py       --seed 42 --mode full --zone PJME
 ```
 
 ### Multi-seed / multi-zone runs
@@ -232,10 +266,9 @@ done
 | Batch size | 512 | 2048 |
 | Search epochs (per eval) | 10 + early stop (patience 3) | 20 + early stop (patience 5) |
 | Retrain epochs | 15 | 60 |
-| Eval budget (search methods) | 12 | 200 |
-| Random trials | 12 | 200 |
-| PSO swarm / iterations | 4 / 2 | 10 / 20 |
-| MOO population / generations | 4 / 2 | 10 / 20 |
+| LSTM search budget | 12 | 200 |
+| Musk Ox population / generations | 4 / 2 | 10 / 20 |
+| NSGA-II population / generations | 4 / 2 | 10 / 20 |
 | Timesteps (dev truncation) | 2,000 | full dataset |
 
 `dev` mode is for rapid debugging. All reported results use `full` mode.

@@ -81,3 +81,22 @@ class Config:
             "lr":         [1e-4, 5e-3],
             "dropout":    [0.0, 0.3],
         }
+
+        # -----------------------
+        # Model registry
+        # Order defines how experiments are enumerated. Only Musk Ox and
+        # NSGA-II are multi-objective — all others are single-objective.
+        # -----------------------
+        self.model_list = [
+            "baseline_lstm",
+            "musk_ox_multi_lstm",
+            "random_search_lstm",
+            "optuna_lstm",
+            "nsga2_direct",
+            "arima",
+            "lightgbm",
+            "cnn_lstm",
+        ]
+
+        # Set of model keys treated as multi-objective optimizations.
+        self.multi_objective_methods = {"musk_ox_multi_lstm", "nsga2_direct"}

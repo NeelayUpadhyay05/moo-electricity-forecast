@@ -35,7 +35,7 @@ def save_results(out_dir, runtime, val_mse, test_metrics, best_hyperparams, conv
         "best_test_mae": float(test_metrics["mae"]),
         "best_test_mape": float(test_metrics["mape"]),
         "best_complexity": int(best_hyperparams["complexity"]),
-        "objectives": ["val_mse", "complexity"],
+        "objectives": ["val_mse"],
         "best_hyperparams": best_hyperparams,
         "convergence": [float(v) for v in convergence],
     }
@@ -126,14 +126,14 @@ def run_optuna(train_df, val_df, test_df, scaling_params, device, config, seed=4
             "complexity": int(complexity),
         })
 
-        return float(val_mse), int(complexity)
+        return float(val_mse)
 
     sampler = optuna.samplers.TPESampler(seed=seed)
-    study = optuna.create_study(directions=["minimize", "minimize"], sampler=sampler)
+    study = optuna.create_study(direction="minimize", sampler=sampler)
     study.optimize(objective, n_trials=config.n_trials)
 
-    # Select Pareto point by minimum validation MSE for fair comparability.
-    best_trial = min(study.best_trials, key=lambda t: t.values[0])
+    # Single-objective: choose best trial by validation MSE
+    best_trial = study.best_trial
     best_config = Config(mode=config.mode)
     best_config.hidden_dim = best_trial.params["hidden_dim"]
     best_config.num_layers = best_trial.params["num_layers"]
@@ -155,24 +155,8 @@ def run_optuna(train_df, val_df, test_df, scaling_params, device, config, seed=4
     out_dir = f"results/seed_{seed}/{zone}/optuna"
     os.makedirs(out_dir, exist_ok=True)
 
-    pareto_rows = [
-        {
-            "trial": t.number + 1,
-            "hidden_dim": t.params["hidden_dim"],
-            "num_layers": t.params["num_layers"],
-            "lr": t.params["lr"],
-            "dropout": t.params["dropout"],
-            "val_mse": float(t.values[0]),
-            "complexity": int(t.values[1]),
-        }
-        for t in study.best_trials
-    ]
-
     pd.DataFrame(search_history).to_csv(
         os.path.join(out_dir, "search_history.csv"), index=False
-    )
-    pd.DataFrame(pareto_rows).to_csv(
-        os.path.join(out_dir, "pareto_front.csv"), index=False
     )
 
     save_results(
