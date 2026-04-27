@@ -6,7 +6,7 @@ Research benchmark for hourly univariate electricity-load forecasting. The repos
 Highlights
 - Eight methods: two multi-objective (Musk Ox MO-LSTM, NSGA-II) and six single-objective / direct predictors.
 - Standardized results saved per seed and zone under `results/seed_{n}/{zone}/`.
-- Analysis notebook `notebooks/analysis_v2.ipynb` performs Friedman/Nemenyi, Wilcoxon tests, dominance checks, and knee-point selection.
+- Analysis notebook `notebooks/analysis.ipynb` performs Friedman/Nemenyi, Wilcoxon tests, dominance checks, and knee-point selection.
 
 ---
 
@@ -118,7 +118,7 @@ python experiments/run_cnn_lstm.py --seed 42 --mode full --zone PJME
 
 ## Analysis
 
-Open `notebooks/analysis_v2.ipynb` to reproduce the paper-quality analyses:
+Open `notebooks/analysis.ipynb` to reproduce the paper-quality analyses:
 
 - Friedman test + Nemenyi post-hoc (global ranking)
 - Wilcoxon (Mann–Whitney U) pairwise tests (MO-LSTM vs others) with FDR correction

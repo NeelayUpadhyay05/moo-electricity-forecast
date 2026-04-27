@@ -26,15 +26,15 @@ class Config:
         # Training (mode-specific)
         # -----------------------
         if mode == "full":
-            self.lr             = 0.004   # linear LR scaling: 0.001 × (2048/512)
-            self.batch_size     = 2048
-            self.search_epochs  = 20      # epochs per fitness evaluation during HPO
-            self.search_patience = 5      # early stopping patience during HPO
+            self.lr             = 0.004   # linear LR scaling: 0.001 × (8192/512)
+            self.batch_size     = 512     # increased 4x to maximize GPU utilization for small model
+            self.search_epochs  = 30      # epochs per fitness evaluation during HPO
+            self.search_patience = 10      # early stopping patience during HPO
             self.retrain_epochs = 60      # epochs for final retrain after HPO
             self.num_workers    = 0 if sys.platform == "win32" else 4
         else:
             self.lr             = 0.001
-            self.batch_size     = 512
+            self.batch_size     = 128
             self.search_epochs  = 10
             self.search_patience = 3
             self.retrain_epochs = 15
@@ -62,7 +62,7 @@ class Config:
             self.pso_swarm_size  = 10
             self.pso_iterations  = 20
             self.moo_pop_size    = 10
-            self.moo_generations = 20
+            self.moo_generations = 19  # 10 initial + (10 * 19 offspring) = 200 total evals
         else:
             # Dev mode remains lightweight for iteration speed.
             self.fair_budget_evals = 12

@@ -107,10 +107,10 @@ def main():
             m = results[model_name]
             row = {
                 "Model": model_name,
-                "Test NRMSE": m.get("best_test_nrmse", m.get("nrmse", "N/A")),
-                "Test RMSE (MW)": m.get("best_test_rmse", m.get("rmse", "N/A")),
-                "Test MAE (MW)": m.get("best_test_mae", m.get("mae", "N/A")),
-                "Test MAPE (%)": m.get("best_test_mape", m.get("mape", "N/A")),
+                "Test RMSE (MW)": m.get("test_rmse", "N/A"),
+                "Test MAE (MW)": m.get("test_mae", "N/A"),
+                "Test MAPE (%)": m.get("test_mape", "N/A"),
+                "Test R2": m.get("test_r2", "N/A"),
                 "Objectives": m.get("objectives", ["single"]),
             }
             summary_rows.append(row)
