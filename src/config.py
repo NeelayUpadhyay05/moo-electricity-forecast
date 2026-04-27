@@ -52,17 +52,17 @@ class Config:
 
         # -----------------------
         # Search Budgets
-        # Full mode follows the research fairness setting:
-        # MOO: pop=30, gen=30 -> 30 x (1 + 30) = 930 evaluations.
-        # PSO/Random/Optuna are aligned to the same 930-eval budget.
+        # Full mode follows the requested research setting:
+        # budget=200, pop/swarm=10, generations/iterations=20.
+        # Random/Optuna are aligned to the same budget label (200 trials).
         # -----------------------
         if mode == "full":
-            self.fair_budget_evals = 930
+            self.fair_budget_evals = 200
             self.n_trials        = self.fair_budget_evals
-            self.pso_swarm_size  = 30
-            self.pso_iterations  = 30  # 30 x (1 + 30) = 930 total evals
-            self.moo_pop_size    = 30
-            self.moo_generations = 30
+            self.pso_swarm_size  = 10
+            self.pso_iterations  = 20
+            self.moo_pop_size    = 10
+            self.moo_generations = 20
         else:
             # Dev mode remains lightweight for iteration speed.
             self.fair_budget_evals = 12

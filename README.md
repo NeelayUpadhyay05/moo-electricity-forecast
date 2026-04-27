@@ -2,7 +2,7 @@
 
 A systematic comparison of hyperparameter optimization (HPO) methods applied to an LSTM model for univariate electricity load forecasting on the PJM dataset.
 
-All search-based methods are evaluated under a strictly fair budget across multiple zones and seeds. In `full` mode, each search optimizer runs 930 evaluations.
+All search-based methods are evaluated under a strictly fair budget across multiple zones and seeds. In `full` mode, each search optimizer runs a 200-evaluation budget setting.
 
 ---
 
@@ -16,7 +16,7 @@ All search-based methods are evaluated under a strictly fair budget across multi
 | PSO (MOPSO) | Multi-objective particle swarm with Pareto archive and leader sampling |
 | **MOO (NSGA-II)** | **Multi-objective evolutionary search minimizing `(val_mse, complexity)`** |
 
-All search-based methods share an **equal budget** in the main comparison. In `full` mode this is **930 evaluations each**: `MOO = 30 x (1 + 30)`, `MOPSO = 30 x (1 + 30)`, `Random = 930 trials`, and `Optuna = 930 trials`. Baseline remains a fixed non-search reference run.
+All search-based methods share an **equal budget** in the main comparison. In `full` mode this is set as: `MOO = pop 10, gen 20`, `MOPSO = swarm 10, iter 20`, `Random = 200 trials`, and `Optuna = 200 trials`. Baseline remains a fixed non-search reference run.
 
 ---
 
@@ -39,6 +39,26 @@ All search-based methods share an **equal budget** in the main comparison. In `f
 | DAYTON | 121,275 | 2004–2018 | ~2,050 |
 
 Three zones were selected to cover a wide range of load magnitudes (small / medium / large), demonstrating generalizability across different regional profiles.
+
+**NYISO Hourly Actual Load** — real-world hourly electricity load (MW) from NYISO, a US regional transmission organization.
+
+- Source: [EIA collected from NYISO](https://www.eia.gov/electricity/gridmonitor/)
+- Raw files: `data/raw/NYISO/` (not tracked by git)
+- Format: yearly wide CSV files with UTC/local timestamps and regional load columns
+- Frequency: hourly
+- Target: univariate load (MW), no exogenous features
+
+**Regions used in experiments:**
+
+| Region | Rows | Span | Mean Load (MW) |
+|--------|------|------|----------------|
+| NEW_YORK_CITY | 33,736 | 2021–2025 | ~5,608 |
+| LONG_ISLAND | 33,736 | 2021–2025 | ~2,253 |
+| CENTRAL | 33,736 | 2021–2025 | ~1,709 |
+
+Three regions were selected to cover a wide range of load magnitudes (small / medium / large), demonstrating generalizability across different regional profiles.
+
+The yearly NYISO files are concatenated first, then the top 3 regions are selected automatically by signal strength and completeness before being written to `data/processed/`.
 
 **Train / Val / Test split** (chronological, no shuffling):
 
@@ -162,6 +182,14 @@ python -m src.data.run_preprocessing --zone AEP
 python -m src.data.run_preprocessing --zone DAYTON
 ```
 
+For NYISO, use:
+
+```bash
+python -m src.data.run_preprocessing --dataset nyiso --data_dir data/raw/NYISO
+```
+
+This will save the selected region CSVs under `data/processed/nyiso_selected/` and the final train/val/test splits under `data/processed/`.
+
 ---
 
 ## Running Experiments
@@ -204,10 +232,10 @@ done
 | Batch size | 512 | 2048 |
 | Search epochs (per eval) | 10 + early stop (patience 3) | 20 + early stop (patience 5) |
 | Retrain epochs | 15 | 60 |
-| Eval budget (search methods) | 12 | 930 |
-| Random trials | 12 | 930 |
-| PSO swarm / iterations | 4 / 2 | 30 / 30 |
-| MOO population / generations | 4 / 2 | 30 / 30 |
+| Eval budget (search methods) | 12 | 200 |
+| Random trials | 12 | 200 |
+| PSO swarm / iterations | 4 / 2 | 10 / 20 |
+| MOO population / generations | 4 / 2 | 10 / 20 |
 | Timesteps (dev truncation) | 2,000 | full dataset |
 
 `dev` mode is for rapid debugging. All reported results use `full` mode.

@@ -23,7 +23,6 @@ def save_results(out_dir, runtime, val_mse, test_metrics, best_hyperparams, conv
     result = {
         "seed": seed,
         "mode": mode,
-        "runtime_s": round(runtime, 2),
         "best_val_mse": float(val_mse),
         "best_test_nrmse": float(test_metrics["nrmse"]),
         "best_test_rmse": float(test_metrics["rmse"]),

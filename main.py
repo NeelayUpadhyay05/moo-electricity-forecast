@@ -47,11 +47,11 @@ if __name__ == "__main__":
         "zone": args.zone,
         "mode": args.mode,
         "results": {
-            "baseline":   {"val_mse": baseline[0],   "test_nrmse": baseline[1],   "runtime_s": baseline[2]},
-            "random":     {"val_mse": random_res[0],  "test_nrmse": random_res[1],  "runtime_s": random_res[2]},
-            "optuna_tpe": {"val_mse": optuna_res[0],  "test_nrmse": optuna_res[1],  "runtime_s": optuna_res[2]},
-            "pso":        {"val_mse": pso_res[0],     "test_nrmse": pso_res[1],     "runtime_s": pso_res[2]},
-            "moo":        {"val_mse": moo_res[0],     "test_nrmse": moo_res[1],     "runtime_s": moo_res[2]},
+            "baseline":   {"val_mse": baseline[0],   "test_nrmse": baseline[1]},
+            "random":     {"val_mse": random_res[0],  "test_nrmse": random_res[1]},
+            "optuna_tpe": {"val_mse": optuna_res[0],  "test_nrmse": optuna_res[1]},
+            "pso":        {"val_mse": pso_res[0],     "test_nrmse": pso_res[1]},
+            "moo":        {"val_mse": moo_res[0],     "test_nrmse": moo_res[1]},
         },
     }
     out_dir = f"results/seed_{args.seed}/{args.zone}"
