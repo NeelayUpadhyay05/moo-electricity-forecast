@@ -70,6 +70,8 @@ def dominates(a, b):
 def run_random_search(train_df, val_df, test_df, scaling_params, device, config, seed=42, zone="PJME"):
 
     set_seed(seed)
+    # propagate seed to HPO/configs
+    os.environ["EXPERIMENT_SEED"] = str(seed)
     print("\n================ RANDOM SEARCH =================")
     start = time.time()
 
@@ -84,12 +86,13 @@ def run_random_search(train_df, val_df, test_df, scaling_params, device, config,
         print(f"\n########## Trial {trial+1}/{config.n_trials} ##########")
 
         trial_config = Config(mode=config.mode)
+        trial_config.seed = seed
         b = config.hp_bounds
         trial_config.hidden_dim = random.randint(b["hidden_dim"][0], b["hidden_dim"][1])
         trial_config.num_layers = random.randint(b["num_layers"][0], b["num_layers"][1])
         trial_config.lr = 10 ** random.uniform(math.log10(b["lr"][0]), math.log10(b["lr"][1]))
         trial_config.dropout = random.uniform(b["dropout"][0], b["dropout"][1])
-        trial_config.checkpoint_path = f"checkpoints/seed_{seed}/{zone}/random_trial.pt"
+        trial_config.checkpoint_path = f"checkpoints/seed_{seed}/{zone}/random_trial_{trial+1}.pt"
 
         os.makedirs(os.path.dirname(trial_config.checkpoint_path), exist_ok=True)
 
@@ -151,6 +154,7 @@ def run_random_search(train_df, val_df, test_df, scaling_params, device, config,
     best_config.num_layers = best_solution["num_layers"]
     best_config.lr = best_solution["lr"]
     best_config.dropout = best_solution["dropout"]
+    best_config.seed = seed
     best_config.checkpoint_path = f"checkpoints/seed_{seed}/{zone}/random_best.pt"
 
     test_metrics = retrain_and_evaluate(
@@ -195,9 +199,11 @@ def main():
     args = parser.parse_args()
 
     set_seed(args.seed)
+    os.environ["EXPERIMENT_SEED"] = str(args.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     config = Config(mode=args.mode)
+    config.seed = args.seed
     train_df, val_df, test_df, scaling_params = load_data(config, zone=args.zone)
 
     val_mse, test_rmse, runtime = run_random_search(

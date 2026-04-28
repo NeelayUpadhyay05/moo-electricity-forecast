@@ -61,12 +61,18 @@ def run_lightgbm(train_df, val_df, test_df, scaling_params, config, seed=42, zon
     preds = predict_lightgbm(model, X_test)[:len(test_series)]
 
     # Compute metrics
-    rmse = calculate_rmse(preds, test_series)
-    mae = calculate_mae(preds, test_series)
-    mape = calculate_mape(preds, test_series)
-    
-    preds_norm = (preds - mean) / std
-    test_norm = (test_series - mean) / std
+    # Predictions and test_series are stored normalized in processed files.
+    # Convert back to original MW scale before RMSE/MAE/MAPE for comparability.
+    preds_orig = preds * std + mean
+    test_orig = test_series * std + mean
+
+    rmse = calculate_rmse(preds_orig, test_orig)
+    mae = calculate_mae(preds_orig, test_orig)
+    mape = calculate_mape(preds_orig, test_orig)
+
+    # R2 computed on normalized values for comparability with model training
+    preds_norm = preds
+    test_norm = test_series
     r2 = calculate_r2(preds_norm, test_norm)
 
     runtime = time.time() - start

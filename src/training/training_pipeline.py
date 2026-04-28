@@ -26,7 +26,9 @@ def _get_retrain_batch_size(config):
 
 
 def _get_search_lr(config):
-    return getattr(config, "search_lr", getattr(config, "lr", 1e-3))
+    # Prefer an explicit `lr` (e.g. sampled by HPO) when present.
+    # Fall back to `search_lr` (config default) and then a safe literal.
+    return getattr(config, "lr", getattr(config, "search_lr", 1e-3))
 
 
 def _get_retrain_lr(config):
@@ -36,6 +38,7 @@ def _get_retrain_lr(config):
 
     search_batch_size = _get_search_batch_size(config)
     retrain_batch_size = _get_retrain_batch_size(config)
+    # Derive retrain LR from the (possibly sampled) search LR / lr.
     return _get_search_lr(config) * (retrain_batch_size / search_batch_size)
 
 
@@ -88,7 +91,10 @@ def train_single_configuration(train_data, val_data, device, config):
         save_path=config.checkpoint_path,
     )
 
-    scaler = amp.GradScaler("cuda") if device.type == "cuda" else None
+    scaler = amp.GradScaler() if device.type == "cuda" else None
+
+    # Log effective search hyperparameters for reproducibility
+    print(f"[Search] batch_size={_get_search_batch_size(config)} | lr={_get_search_lr(config)}")
 
     epoch_bar = tqdm(
         range(config.search_epochs),
@@ -158,7 +164,10 @@ def retrain_and_evaluate(train_data, val_data, test_data,
 
     os.makedirs(os.path.dirname(config.checkpoint_path), exist_ok=True)
 
-    scaler = amp.GradScaler("cuda") if device.type == "cuda" else None
+    scaler = amp.GradScaler() if device.type == "cuda" else None
+
+    # Log effective retrain hyperparameters for reproducibility
+    print(f"[Retrain] batch_size={_get_retrain_batch_size(config)} | lr={_get_retrain_lr(config)}")
 
     print(f"\n[Final Retraining] epochs={config.retrain_epochs}")
 
@@ -187,11 +196,33 @@ def retrain_and_evaluate(train_data, val_data, test_data,
         )
 
     # -------------------------
-    # Test Evaluation
+    # Test Evaluation (build test windows from train+val+test to match other methods)
     # -------------------------
-    test_dataset = LoadDataset(test_data, seq_len=config.seq_len)
-    test_loader  = DataLoader(
-        test_dataset,
+    # Use the same combined-window construction used by LightGBM/CNN/ARIMA
+    combined_all = pd.concat([train_data, val_data, test_data])
+    combined_vals = combined_all.values
+    if combined_vals.ndim > 1:
+        combined_vals = combined_vals.squeeze(axis=1)
+
+    lags = config.seq_len
+    X_all = []
+    y_all = []
+    for i in range(lags, len(combined_vals)):
+        X_all.append(combined_vals[i - lags : i])
+        y_all.append(combined_vals[i])
+    X_all = np.asarray(X_all, dtype=np.float32)
+    y_all = np.asarray(y_all, dtype=np.float32)
+
+    start_idx = len(train_data) + len(val_data) - lags
+    X_test = X_all[start_idx : start_idx + len(test_data)]
+    y_test = y_all[start_idx : start_idx + len(test_data)]
+
+    # Build DataLoader for test windows (add input feature dim)
+    test_tensor = torch.utils.data.TensorDataset(
+        torch.from_numpy(X_test).unsqueeze(-1), torch.from_numpy(y_test)
+    )
+    test_loader = DataLoader(
+        test_tensor,
         batch_size=_get_retrain_batch_size(config),
         shuffle=False,
         num_workers=config.num_workers,
@@ -204,11 +235,10 @@ def retrain_and_evaluate(train_data, val_data, test_data,
     model.eval()
 
     mean = scaling_params["mean"]
-    std  = scaling_params["std"]
+    std = scaling_params["std"]
 
     all_predictions = []
     all_targets_normalized = []
-    all_targets_original = []
 
     with torch.no_grad():
         for x, y in test_loader:
@@ -218,19 +248,15 @@ def retrain_and_evaluate(train_data, val_data, test_data,
 
             all_predictions.append(outputs)
             all_targets_normalized.append(targets)
-            
-            # Inverse z-score to recover original MW scale
-            target_inv = targets * std + mean
-            all_targets_original.append(target_inv)
 
     pred_norm = np.concatenate(all_predictions)
     targ_norm = np.concatenate(all_targets_normalized)
-    targ_orig = np.concatenate(all_targets_original)
-    
-    # Predictions in original scale
-    pred_orig = pred_norm * std + mean
 
-    # Calculate metrics
+    # Convert back to original MW scale for RMSE/MAE/MAPE
+    pred_orig = pred_norm * std + mean
+    targ_orig = targ_norm * std + mean
+
+    # Calculate metrics (RMSE/MAE/MAPE in MW; R2 on normalized values)
     rmse = float(np.sqrt(np.mean((pred_orig - targ_orig) ** 2)))
     mae = float(np.mean(np.abs(pred_orig - targ_orig)))
     mape = float(np.mean(np.abs(pred_orig - targ_orig) / np.clip(np.abs(targ_orig), 1.0, None)) * 100)

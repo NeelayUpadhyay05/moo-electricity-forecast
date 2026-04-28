@@ -113,6 +113,60 @@ def rank_nyiso_regions(df: pd.DataFrame, top_k: int = 3) -> list[dict]:
     return ranked[:top_k]
 
 
+def rank_nyiso_regions_train_only(
+    df: pd.DataFrame, top_k: int = 3, train_ratio: float = 0.70
+) -> list[dict]:
+    """Rank NYISO regions using only each region's training-period segment.
+
+    This avoids future/test leakage when choosing which NYISO regions to keep.
+    """
+    zone_cols = nyiso_region_columns(df)
+    if len(zone_cols) < top_k:
+        raise ValueError(
+            f"Requested top_k={top_k}, but only found {len(zone_cols)} NYISO regions."
+        )
+
+    ranked = []
+    for column in zone_cols:
+        raw_name = column.replace(" Actual Load (MW)", "")
+        if " - " in raw_name:
+            region_code, region_name = raw_name.split(" - ", 1)
+        else:
+            region_code, region_name = raw_name, raw_name
+
+        full_series = extract_region_series(df, column)
+        train_end = int(len(full_series) * train_ratio)
+        train_series = full_series.iloc[:train_end]
+        if len(train_series) == 0:
+            continue
+
+        missing_fraction = float(train_series.isna().mean())
+        completeness = 1.0 - missing_fraction
+        std = float(train_series.std())
+        mean = float(train_series.mean())
+        score = completeness * std
+
+        ranked.append(
+            {
+                "raw_column": column,
+                "region_code": region_code,
+                "region_name": region_name,
+                "zone": _slugify_region_name(region_name),
+                "missing_fraction": missing_fraction,
+                "completeness": completeness,
+                "mean": mean,
+                "std": std,
+                "score": score,
+            }
+        )
+
+    ranked.sort(
+        key=lambda item: (item["score"], item["std"], item["mean"]),
+        reverse=True,
+    )
+    return ranked[:top_k]
+
+
 def extract_region_series(df: pd.DataFrame, column: str) -> pd.Series:
     """Convert a NYISO region column into a cleaned datetime-indexed series."""
     timestamp_col = "UTC Timestamp (Interval Ending)"

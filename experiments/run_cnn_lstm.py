@@ -88,12 +88,18 @@ def run_cnn_lstm(train_df, val_df, test_df, scaling_params, device, config, seed
         preds = model(X_test_t).cpu().numpy()
 
     # Compute metrics
-    rmse = calculate_rmse(preds, y_test)
-    mae = calculate_mae(preds, y_test)
-    mape = calculate_mape(preds, y_test)
-    
-    preds_norm = (preds - mean) / std
-    y_test_norm = (y_test - mean) / std
+    # `preds` and `y_test` are normalized (from processed files). Convert
+    # back to original MW scale for RMSE/MAE/MAPE to match LSTM reporting.
+    preds_orig = preds * std + mean
+    y_test_orig = y_test * std + mean
+
+    rmse = calculate_rmse(preds_orig, y_test_orig)
+    mae = calculate_mae(preds_orig, y_test_orig)
+    mape = calculate_mape(preds_orig, y_test_orig)
+
+    # R2 on normalized values
+    preds_norm = preds
+    y_test_norm = y_test
     r2 = calculate_r2(preds_norm, y_test_norm)
 
     runtime = time.time() - start

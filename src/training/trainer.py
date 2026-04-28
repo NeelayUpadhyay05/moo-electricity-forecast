@@ -9,7 +9,7 @@ def train_one_epoch(model, dataloader, optimizer, criterion, device,
 
     total_loss = 0.0
     n_processed = 0
-    use_amp = (device.type == "cuda")
+    use_amp = (scaler is not None)
 
     for x, y in tqdm(dataloader, desc="  train", leave=False,
                      unit="batch", ncols=90):
@@ -18,7 +18,7 @@ def train_one_epoch(model, dataloader, optimizer, criterion, device,
 
         optimizer.zero_grad()
 
-        if use_amp:
+        if use_amp and scaler is not None:
             with amp.autocast(device_type="cuda"):
                 outputs = model(x)
                 loss = criterion(outputs, y)

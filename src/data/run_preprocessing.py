@@ -5,7 +5,7 @@ import json
 from src.data.preprocess import (
     load_pjm_dataset,
     load_nyiso_dataset,
-    rank_nyiso_regions,
+    rank_nyiso_regions_train_only,
     extract_region_series,
     split_chronological,
     normalize,
@@ -149,7 +149,9 @@ def main():
     )
     print(f"  Combined raw saved to: {combined_path}")
 
-    ranked_regions = rank_nyiso_regions(combined, top_k=args.top_k)
+    ranked_regions = rank_nyiso_regions_train_only(
+        combined, top_k=args.top_k, train_ratio=args.train_ratio
+    )
     summary_path = os.path.join(args.selection_dir, "nyiso_top_regions.json")
     with open(summary_path, "w") as f:
         json.dump(ranked_regions, f, indent=4)

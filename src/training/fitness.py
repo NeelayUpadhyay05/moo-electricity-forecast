@@ -1,4 +1,6 @@
 import numpy as np
+import uuid
+import os
 from src.config import Config
 from src.models.lstm import LSTMModel, count_parameters
 from src.training.training_pipeline import train_single_configuration
@@ -13,6 +15,16 @@ def decode_particle_to_config(particle, mode):
     config.num_layers = int(np.clip(np.round(particle[1]), b["num_layers"][0], b["num_layers"][1]))
     config.lr = float(np.clip(10 ** particle[2], b["lr"][0], b["lr"][1]))
     config.dropout = float(np.clip(particle[3], b["dropout"][0], b["dropout"][1]))
+
+    # Ensure each HPO evaluation writes to a unique checkpoint to avoid clobbering
+    fname = f"hpo_{uuid.uuid4().hex}.pt"
+    config.checkpoint_path = os.path.join("checkpoints", "hpo", fname)
+    # Propagate experiment-level seed (if set by runners) so DataLoader workers
+    # use a consistent base seed during HPO evaluations.
+    try:
+        config.seed = int(os.environ.get("EXPERIMENT_SEED", 42))
+    except Exception:
+        config.seed = 42
 
     return config
 

@@ -43,12 +43,18 @@ def run_arima(train_df, val_df, test_df, scaling_params, config, seed=42, zone="
     preds = forecast_arima(fitted, steps=len(test_vals))
 
     # Compute metrics
-    rmse = calculate_rmse(preds, test_vals)
-    mae = calculate_mae(preds, test_vals)
-    mape = calculate_mape(preds, test_vals)
-    
-    preds_norm = (preds - mean) / std
-    test_norm = (test_vals - mean) / std
+    # `preds` and `test_vals` are normalized; convert back to MW for
+    # RMSE/MAE/MAPE so results are directly comparable to LSTM reporting.
+    preds_orig = preds * std + mean
+    test_orig = test_vals * std + mean
+
+    rmse = calculate_rmse(preds_orig, test_orig)
+    mae = calculate_mae(preds_orig, test_orig)
+    mape = calculate_mape(preds_orig, test_orig)
+
+    # R2 on normalized values
+    preds_norm = preds
+    test_norm = test_vals
     r2 = calculate_r2(preds_norm, test_norm)
 
     runtime = time.time() - start

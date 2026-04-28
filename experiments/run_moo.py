@@ -70,6 +70,8 @@ def load_data(config, zone="PJME"):
 def run_moo(train_df, val_df, test_df, scaling_params, device, config, seed=42, zone="PJME"):
 
     set_seed(seed)
+    # propagate seed into environment so HPO fitness configs inherit it
+    os.environ["EXPERIMENT_SEED"] = str(seed)
     print("\n================ MOO =================")
     start = time.time()
 
@@ -118,6 +120,7 @@ def run_moo(train_df, val_df, test_df, scaling_params, device, config, seed=42, 
     best_config.num_layers = best_hp["num_layers"]
     best_config.lr         = best_hp["lr"]
     best_config.dropout    = best_hp["dropout"]
+    best_config.seed = seed
     best_config.checkpoint_path = f"checkpoints/seed_{seed}/{zone}/musk_ox_best.pt"
 
     os.makedirs(os.path.dirname(best_config.checkpoint_path), exist_ok=True)
@@ -188,6 +191,7 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     config = Config(mode=args.mode)
+    config.seed = args.seed
     train_df, val_df, test_df, scaling_params = load_data(config, zone=args.zone)
 
     val_mse, test_rmse, runtime = run_moo(
