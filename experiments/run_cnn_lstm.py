@@ -52,7 +52,8 @@ def run_cnn_lstm(train_df, val_df, test_df, scaling_params, device, config, seed
     val_series = val_df.iloc[:, 0].values
     test_series = test_df.iloc[:, 0].values
 
-    X_train, y_train = make_dataset(np.concatenate([train_series, val_series]), seq_len)
+    # Train only on training data (consistent with LSTM search phase fairness)
+    X_train, y_train = make_dataset(train_series, seq_len)
     X_test_all, y_test_all = make_dataset(np.concatenate([train_series, val_series, test_series]), seq_len)
     # test portion at end
     start_idx = len(train_series) + len(val_series) - seq_len
@@ -62,7 +63,7 @@ def run_cnn_lstm(train_df, val_df, test_df, scaling_params, device, config, seed
     train_tensor = TensorDataset(torch.from_numpy(X_train).float(), torch.from_numpy(y_train).float())
     train_loader = DataLoader(train_tensor, batch_size=config.batch_size, shuffle=True)
 
-    model = CNNLSTM(seq_len=seq_len, conv_channels=16, lstm_hidden=config.hidden_dim, lstm_layers=config.num_layers, dropout=config.dropout).to(device)
+    model = CNNLSTM(seq_len=seq_len, conv_channels=config.cnn_conv_channels, lstm_hidden=config.hidden_dim, lstm_layers=config.num_layers, dropout=config.dropout).to(device)
     criterion = nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=config.lr)
 
@@ -113,6 +114,12 @@ def run_cnn_lstm(train_df, val_df, test_df, scaling_params, device, config, seed
         "test_mape": float(mape),
         "test_r2": float(r2),
         "runtime": runtime,
+        "hyperparams": {
+            "conv_channels": config.cnn_conv_channels,
+            "hidden_dim": config.hidden_dim,
+            "num_layers": config.num_layers,
+            "dropout": config.dropout,
+        },
     }
     with open(os.path.join(out_dir, "metrics.json"), "w") as f:
         json.dump(result, f, indent=4)

@@ -37,21 +37,28 @@ class MuskOxOptimizer:
         return ((a[0] <= b[0] and a[1] <= b[1]) and (a[0] < b[0] or a[1] < b[1]))
 
     def update_archive(self, archive, archive_objs, candidate, candidate_obj):
-        # remove dominated archive members
+        # Keep the archive unchanged unless the candidate is admitted.
+        dominated = False
         keep = []
         keep_objs = []
-        dominated = False
+
         for a, ao in zip(archive, archive_objs):
             if self.dominates(ao, candidate_obj):
                 dominated = True
-                break
-            if self.dominates(candidate_obj, ao):
+                keep.append(a)
+                keep_objs.append(ao)
+            elif self.dominates(candidate_obj, ao):
+                # Candidate improves on this member, so drop it only if the
+                # candidate is ultimately accepted.
                 continue
-            keep.append(a)
-            keep_objs.append(ao)
+            else:
+                keep.append(a)
+                keep_objs.append(ao)
+
         if not dominated:
             keep.append(candidate)
             keep_objs.append(candidate_obj)
+
         return np.array(keep), np.array(keep_objs)
 
     def perturb(self, parent):
@@ -65,10 +72,15 @@ class MuskOxOptimizer:
 
     def tournament(self, population, objectives):
         i, j = self.rng.choice(len(population), size=2, replace=False)
-        # prefer lower val_mse
-        if objectives[i][0] < objectives[j][0]:
+        # Use dominance-aware selection for true multi-objective tournament
+        if self.dominates(objectives[i], objectives[j]):
             return population[i]
-        if objectives[j][0] < objectives[i][0]:
+        if self.dominates(objectives[j], objectives[i]):
+            return population[j]
+        # If neither dominates, break ties by complexity (prefer simpler)
+        if objectives[i][1] < objectives[j][1]:
+            return population[i]
+        if objectives[j][1] < objectives[i][1]:
             return population[j]
         return population[i] if self.rng.random() < 0.5 else population[j]
 

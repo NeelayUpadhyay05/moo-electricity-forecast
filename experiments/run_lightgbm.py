@@ -49,8 +49,9 @@ def run_lightgbm(train_df, val_df, test_df, scaling_params, config, seed=42, zon
     val_series = val_df.iloc[:, 0].values
     test_series = test_df.iloc[:, 0].values
 
-    X_train, y_train = build_lag_features(np.concatenate([train_series, val_series]), lags=lags)
-    model = train_lightgbm(X_train, y_train, params=None, num_boost_round=100)
+    # Train only on training data (consistent with LSTM search phase fairness)
+    X_train, y_train = build_lag_features(train_series, lags=lags)
+    model = train_lightgbm(X_train, y_train, params=None, num_boost_round=100, seed=seed)
 
     # Build test features using trailing lags from combined
     combined = np.concatenate([train_series, val_series, test_series])
@@ -87,6 +88,7 @@ def run_lightgbm(train_df, val_df, test_df, scaling_params, config, seed=42, zon
         "test_mape": float(mape),
         "test_r2": float(r2),
         "runtime": runtime,
+        "hyperparams": {"num_boost_round": 100},
     }
     with open(os.path.join(out_dir, "metrics.json"), "w") as f:
         json.dump(result, f, indent=4)

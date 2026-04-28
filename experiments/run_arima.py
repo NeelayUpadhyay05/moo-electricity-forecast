@@ -36,10 +36,11 @@ def run_arima(train_df, val_df, test_df, scaling_params, config, seed=42, zone="
     mean = scaling_params["mean"]
     std = scaling_params["std"]
     
-    combined = pd.concat([train_df, val_df]).iloc[:, 0].values
+    # Train only on training data (consistent with LSTM search phase fairness)
+    train_vals = train_df.iloc[:, 0].values
     test_vals = test_df.iloc[:, 0].values
 
-    fitted = fit_arima(combined, order=(5, 1, 0))
+    fitted = fit_arima(train_vals, order=config.arima_order)
     preds = forecast_arima(fitted, steps=len(test_vals))
 
     # Compute metrics
@@ -69,6 +70,7 @@ def run_arima(train_df, val_df, test_df, scaling_params, config, seed=42, zone="
         "test_mape": float(mape),
         "test_r2": float(r2),
         "runtime": runtime,
+        "hyperparams": {"arima_order": config.arima_order},
     }
     with open(os.path.join(out_dir, "metrics.json"), "w") as f:
         json.dump(result, f, indent=4)

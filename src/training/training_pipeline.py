@@ -131,18 +131,27 @@ def retrain_and_evaluate(train_data, val_data, test_data,
                          device, config, scaling_params):
     base_seed = getattr(config, "seed", 42)
 
-    combined = pd.concat([train_data, val_data])
+    train_dataset = LoadDataset(train_data, seq_len=config.seq_len)
+    val_dataset = LoadDataset(val_data, seq_len=config.seq_len)
 
-    dataset = LoadDataset(combined, seq_len=config.seq_len)
-    dataloader = DataLoader(
-        dataset,
+    train_loader = DataLoader(
+        train_dataset,
         batch_size=_get_retrain_batch_size(config),
         shuffle=True,
         num_workers=config.num_workers,
         worker_init_fn=lambda worker_id: worker_init_fn(worker_id, base_seed) if config.num_workers > 0 else None,
         pin_memory=config.pin_memory,
         persistent_workers=config.persistent_workers,
-        drop_last=config.drop_last,
+        drop_last=False,
+    )
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=_get_retrain_batch_size(config),
+        shuffle=False,
+        num_workers=config.num_workers,
+        worker_init_fn=lambda worker_id: worker_init_fn(worker_id, base_seed) if config.num_workers > 0 else None,
+        pin_memory=config.pin_memory,
+        persistent_workers=config.persistent_workers,
     )
 
     model = LSTMModel(
@@ -179,20 +188,21 @@ def retrain_and_evaluate(train_data, val_data, test_data,
         leave=True,
     )
 
-    best_train_loss = float("inf")
+    best_val_loss = float("inf")
 
     for _ in epoch_bar:
         train_loss = train_one_epoch(
-            model, dataloader, optimizer, criterion, device, scaler,
+            model, train_loader, optimizer, criterion, device, scaler,
         )
+        val_loss = validate(model, val_loader, criterion, device)
         scheduler.step()
 
-        if train_loss < best_train_loss:
-            best_train_loss = train_loss
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
             torch.save(model.state_dict(), config.checkpoint_path)
 
         epoch_bar.set_postfix(
-            {"train": f"{train_loss:.5f}", "best": f"{best_train_loss:.5f}"}
+            {"train": f"{train_loss:.5f}", "val": f"{val_loss:.5f}", "best": f"{best_val_loss:.5f}"}
         )
 
     # -------------------------

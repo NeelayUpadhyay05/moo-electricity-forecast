@@ -21,7 +21,7 @@ RUNNER_MAP = {
 }
 
 
-def run_experiment(model_name, seed, mode, zone):
+def run_experiment(model_name, seed, mode, zone, timeout=7200):
     """Run an experiment for a single model and return metrics."""
     if model_name not in RUNNER_MAP:
         print(f"⚠ Unknown model: {model_name}")
@@ -42,7 +42,7 @@ def run_experiment(model_name, seed, mode, zone):
     print(f"{'='*70}")
 
     try:
-        result = subprocess.run(cmd, check=True, capture_output=False, text=True, timeout=3600)
+        result = subprocess.run(cmd, check=True, capture_output=False, text=True, timeout=timeout)
         # Infer output dir from runner convention
         if model_name == "baseline_lstm":
             out_dir = f"results/seed_{seed}/{zone}/baseline"
@@ -80,6 +80,7 @@ def main():
     parser.add_argument("--mode", type=str, default="full", choices=["dev", "full"], help="Execution mode")
     parser.add_argument("--zone", type=str, default="PJME", help="Energy zone/region")
     parser.add_argument("--models", type=str, default=None, help="Comma-separated list of models to run (default: all)")
+    parser.add_argument("--timeout", type=int, default=7200, help="Timeout per method in seconds (default: 7200 for full mode)")
     args = parser.parse_args()
 
     config = Config(mode=args.mode)
@@ -92,7 +93,7 @@ def main():
 
     results = {}
     for model_name in models_to_run:
-        metrics = run_experiment(model_name, args.seed, args.mode, args.zone)
+        metrics = run_experiment(model_name, args.seed, args.mode, args.zone, timeout=args.timeout)
         if metrics:
             results[model_name] = metrics
 

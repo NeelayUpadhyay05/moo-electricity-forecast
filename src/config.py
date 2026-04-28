@@ -64,22 +64,31 @@ class Config:
         # Full mode follows the requested research setting:
         # budget=200, pop/swarm=10, generations/iterations=20.
         # Random/Optuna are aligned to the same budget label (200 trials).
+        # Formula: total_evals = pop_size * (1 + generations)
         # -----------------------
         if mode == "full":
             self.fair_budget_evals = 200
             self.n_trials        = self.fair_budget_evals
-            self.pso_swarm_size  = 10
-            self.pso_iterations  = 20
             self.moo_pop_size    = 10
-            self.moo_generations = 19  # 10 initial + (10 * 19 offspring) = 200 total evals
+            self.moo_generations = (self.fair_budget_evals - self.moo_pop_size) // self.moo_pop_size
+            # Verify: 10 init + (10 * 19) offspring = 200 total evals
+            assert self.moo_pop_size * (1 + self.moo_generations) == self.fair_budget_evals, \
+                f"MOO budget mismatch: {self.moo_pop_size * (1 + self.moo_generations)} != {self.fair_budget_evals}"
         else:
             # Dev mode remains lightweight for iteration speed.
             self.fair_budget_evals = 12
             self.n_trials        = 12
-            self.pso_swarm_size  = 4
-            self.pso_iterations  = 2   # 4 × (1 + 2) = 12 total evals
             self.moo_pop_size    = 4
-            self.moo_generations = 2   # 4 × (1 + 2) = 12 total evals
+            self.moo_generations = (self.fair_budget_evals - self.moo_pop_size) // self.moo_pop_size
+            # Verify: 4 init + (4 * 2) offspring = 12 total evals
+            assert self.moo_pop_size * (1 + self.moo_generations) == self.fair_budget_evals, \
+                f"MOO budget mismatch (dev): {self.moo_pop_size * (1 + self.moo_generations)} != {self.fair_budget_evals}"
+
+        # -----------------------
+        # Non-HPO Method Hyperparameters
+        # -----------------------
+        self.arima_order = (5, 1, 0)  # (p, d, q) for ARIMA
+        self.cnn_conv_channels = 16   # Convolutional channels for CNN-LSTM
 
         # -----------------------
         # Hyperparameter Bounds (single source of truth)

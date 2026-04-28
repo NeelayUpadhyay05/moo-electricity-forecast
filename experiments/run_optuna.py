@@ -86,7 +86,7 @@ def run_optuna(train_df, val_df, test_df, scaling_params, device, config, seed=4
         trial_config.num_layers = trial.suggest_int("num_layers", b["num_layers"][0], b["num_layers"][1])
         trial_config.lr = trial.suggest_float("lr", b["lr"][0], b["lr"][1], log=True)
         trial_config.dropout = trial.suggest_float("dropout", b["dropout"][0], b["dropout"][1])
-        trial_config.checkpoint_path = f"checkpoints/seed_{seed}/{zone}/optuna_trial.pt"
+        trial_config.checkpoint_path = f"checkpoints/seed_{seed}/{zone}/optuna_trial_{trial.number}.pt"
 
         os.makedirs(os.path.dirname(trial_config.checkpoint_path), exist_ok=True)
 
@@ -186,6 +186,7 @@ def main():
     args = parser.parse_args()
 
     set_seed(args.seed)
+    os.environ["EXPERIMENT_SEED"] = str(args.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     config = Config(mode=args.mode)
