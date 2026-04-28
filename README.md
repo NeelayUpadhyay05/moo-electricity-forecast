@@ -26,8 +26,6 @@ Single-objective or direct predictive methods (optimize `val_mse` or are fixed m
 - `lightgbm` — LightGBM on lag features
 - `cnn_lstm` — CNN-LSTM hybrid
 
-Only `musk_ox_multi_lstm` and `nsga2_direct` produce Pareto fronts and multi-objective outputs; the remaining methods are evaluated as single-objective models.
-
 ---
 
 ## Datasets & Zones
@@ -132,7 +130,8 @@ The notebook exports tables to `tables/` and plots to `plots/`.
 ## Reproducibility
 
 - Seeds are set for Python / NumPy / PyTorch via `src/utils/seed.py`.
-- All runs save results to `results/seed_{n}/{zone}/` and checkpoints to `checkpoints/seed_{n}/{zone}/`.
+- Data loading uses multi-worker processes with deterministic seeding for reproducibility.
+- All results are versioned by seed and zone for easy tracking and replication.
 
 ---
 

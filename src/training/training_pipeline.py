@@ -3,6 +3,7 @@ from src.models.lstm import LSTMModel
 from src.training.trainer import train_one_epoch, validate
 from src.training.early_stopping import EarlyStopping
 from src.metrics import calculate_r2
+from src.utils.seed import worker_init_fn
 
 import sys
 
@@ -16,28 +17,53 @@ import os
 from torch import amp
 
 
+def _get_search_batch_size(config):
+    return getattr(config, "search_batch_size", getattr(config, "batch_size", 128))
+
+
+def _get_retrain_batch_size(config):
+    return getattr(config, "retrain_batch_size", _get_search_batch_size(config))
+
+
+def _get_search_lr(config):
+    return getattr(config, "search_lr", getattr(config, "lr", 1e-3))
+
+
+def _get_retrain_lr(config):
+    explicit = getattr(config, "retrain_lr", None)
+    if explicit is not None:
+        return explicit
+
+    search_batch_size = _get_search_batch_size(config)
+    retrain_batch_size = _get_retrain_batch_size(config)
+    return _get_search_lr(config) * (retrain_batch_size / search_batch_size)
+
+
 # ==========================================================
 # Hyperparameter Search Phase (with Early Stopping)
 # ==========================================================
 def train_single_configuration(train_data, val_data, device, config):
+    base_seed = getattr(config, "seed", 42)
 
     train_dataset = LoadDataset(train_data, seq_len=config.seq_len)
     val_dataset   = LoadDataset(val_data,   seq_len=config.seq_len)
 
     train_loader = DataLoader(
         train_dataset,
-        batch_size=config.batch_size,
+        batch_size=_get_search_batch_size(config),
         shuffle=True,
         num_workers=config.num_workers,
+        worker_init_fn=lambda worker_id: worker_init_fn(worker_id, base_seed) if config.num_workers > 0 else None,
         pin_memory=config.pin_memory,
         persistent_workers=config.persistent_workers,
         drop_last=config.drop_last,
     )
     val_loader = DataLoader(
         val_dataset,
-        batch_size=config.batch_size,
+        batch_size=_get_search_batch_size(config),
         shuffle=False,
         num_workers=config.num_workers,
+        worker_init_fn=lambda worker_id: worker_init_fn(worker_id, base_seed) if config.num_workers > 0 else None,
         pin_memory=config.pin_memory,
         persistent_workers=config.persistent_workers,
     )
@@ -49,7 +75,7 @@ def train_single_configuration(train_data, val_data, device, config):
     ).to(device)
 
     criterion = nn.MSELoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=config.lr)
+    optimizer = torch.optim.Adam(model.parameters(), lr=_get_search_lr(config))
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer, T_max=config.search_epochs
     )
@@ -97,15 +123,17 @@ def train_single_configuration(train_data, val_data, device, config):
 # ==========================================================
 def retrain_and_evaluate(train_data, val_data, test_data,
                          device, config, scaling_params):
+    base_seed = getattr(config, "seed", 42)
 
     combined = pd.concat([train_data, val_data])
 
     dataset = LoadDataset(combined, seq_len=config.seq_len)
     dataloader = DataLoader(
         dataset,
-        batch_size=config.batch_size,
+        batch_size=_get_retrain_batch_size(config),
         shuffle=True,
         num_workers=config.num_workers,
+        worker_init_fn=lambda worker_id: worker_init_fn(worker_id, base_seed) if config.num_workers > 0 else None,
         pin_memory=config.pin_memory,
         persistent_workers=config.persistent_workers,
         drop_last=config.drop_last,
@@ -123,7 +151,7 @@ def retrain_and_evaluate(train_data, val_data, test_data,
         model = torch.compile(model)
 
     criterion = nn.MSELoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=config.lr)
+    optimizer = torch.optim.Adam(model.parameters(), lr=_get_retrain_lr(config))
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer, T_max=config.retrain_epochs
     )
@@ -164,9 +192,10 @@ def retrain_and_evaluate(train_data, val_data, test_data,
     test_dataset = LoadDataset(test_data, seq_len=config.seq_len)
     test_loader  = DataLoader(
         test_dataset,
-        batch_size=config.batch_size,
+        batch_size=_get_retrain_batch_size(config),
         shuffle=False,
         num_workers=config.num_workers,
+        worker_init_fn=lambda worker_id: worker_init_fn(worker_id, base_seed) if config.num_workers > 0 else None,
         pin_memory=config.pin_memory,
         persistent_workers=config.persistent_workers,
     )

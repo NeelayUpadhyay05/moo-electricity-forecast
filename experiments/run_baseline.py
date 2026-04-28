@@ -68,7 +68,11 @@ def run_baseline(train_df, val_df, test_df, scaling_params, device, config, seed
     base_config = Config(mode=config.mode)
     base_config.hidden_dim = 128
     base_config.num_layers = 1
+    base_config.search_batch_size = 512
+    base_config.retrain_batch_size = 128
+    base_config.batch_size = base_config.search_batch_size
     base_config.lr = 0.004
+    base_config.search_lr = base_config.lr
     base_config.dropout = 0.0
     base_config.checkpoint_path = f"checkpoints/seed_{seed}/{zone}/baseline_best.pt"
 
@@ -92,7 +96,13 @@ def run_baseline(train_df, val_df, test_df, scaling_params, device, config, seed
         runtime=runtime,
         test_metrics=test_metrics,
         best_hyperparams={
-            "hidden_dim": 128, "num_layers": 1, "lr": 0.004, "dropout": 0.0
+            "hidden_dim": 128,
+            "num_layers": 1,
+            "search_batch_size": base_config.search_batch_size,
+            "retrain_batch_size": base_config.retrain_batch_size,
+            "search_lr": base_config.search_lr,
+            "retrain_lr": base_config.search_lr * (base_config.retrain_batch_size / base_config.search_batch_size),
+            "dropout": 0.0,
         },
         seed=seed,
         mode=config.mode,

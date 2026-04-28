@@ -25,20 +25,29 @@ class Config:
         # -----------------------
         # Training (mode-specific)
         # -----------------------
+        self.base_batch_size = 128
+        self.base_lr = 0.001
+
         if mode == "full":
-            self.lr             = 0.004   # linear LR scaling: 0.001 × (8192/512)
-            self.batch_size     = 512     # increased 4x to maximize GPU utilization for small model
+            self.search_batch_size = 512
+            self.retrain_batch_size = 128
+            self.lr             = self.base_lr * (self.search_batch_size / self.base_batch_size)
+            self.batch_size     = self.search_batch_size
             self.search_epochs  = 30      # epochs per fitness evaluation during HPO
             self.search_patience = 10      # early stopping patience during HPO
             self.retrain_epochs = 60      # epochs for final retrain after HPO
-            self.num_workers    = 0 if sys.platform == "win32" else 4
+            self.num_workers    = 2  # with worker_init_fn for reproducibility
         else:
-            self.lr             = 0.001
-            self.batch_size     = 128
+            self.search_batch_size = 128
+            self.retrain_batch_size = 128
+            self.lr             = self.base_lr
+            self.batch_size     = self.search_batch_size
             self.search_epochs  = 10
             self.search_patience = 3
             self.retrain_epochs = 15
             self.num_workers    = 0
+
+        self.search_lr = self.lr
 
         self.min_delta = 1e-4
         self.checkpoint_path = "checkpoints/temp_best.pt"
