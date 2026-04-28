@@ -21,8 +21,12 @@ RUNNER_MAP = {
 }
 
 
-def run_experiment(model_name, seed, mode, zone, timeout=7200):
-    """Run an experiment for a single model and return metrics."""
+def run_experiment(model_name, seed, mode, zone, timeout=None):
+    """Run an experiment for a single model and return metrics.
+    
+    Args:
+        timeout: Timeout in seconds. If None, no timeout is enforced.
+    """
     if model_name not in RUNNER_MAP:
         print(f"⚠ Unknown model: {model_name}")
         return None
@@ -80,7 +84,7 @@ def main():
     parser.add_argument("--mode", type=str, default="full", choices=["dev", "full"], help="Execution mode")
     parser.add_argument("--zone", type=str, default="PJME", help="Energy zone/region")
     parser.add_argument("--models", type=str, default=None, help="Comma-separated list of models to run (default: all)")
-    parser.add_argument("--timeout", type=int, default=7200, help="Timeout per method in seconds (default: 7200 for full mode)")
+    parser.add_argument("--timeout", type=int, default=None, help="Timeout per method in seconds (default: None = no timeout)")
     args = parser.parse_args()
 
     config = Config(mode=args.mode)
