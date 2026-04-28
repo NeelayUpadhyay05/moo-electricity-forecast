@@ -1,3 +1,4 @@
+from functools import partial
 from src.data.dataset import LoadDataset
 from src.models.lstm import LSTMModel
 from src.training.trainer import train_one_epoch, validate
@@ -50,13 +51,15 @@ def train_single_configuration(train_data, val_data, device, config):
 
     train_dataset = LoadDataset(train_data, seq_len=config.seq_len)
     val_dataset   = LoadDataset(val_data,   seq_len=config.seq_len)
+    worker_fn = partial(worker_init_fn, base_seed=base_seed) if config.num_workers > 0 else None
+
 
     train_loader = DataLoader(
         train_dataset,
         batch_size=_get_search_batch_size(config),
         shuffle=True,
         num_workers=config.num_workers,
-        worker_init_fn=lambda worker_id: worker_init_fn(worker_id, base_seed) if config.num_workers > 0 else None,
+        worker_init_fn=worker_fn,
         pin_memory=config.pin_memory,
         persistent_workers=config.persistent_workers,
         drop_last=config.drop_last,
@@ -66,7 +69,7 @@ def train_single_configuration(train_data, val_data, device, config):
         batch_size=_get_search_batch_size(config),
         shuffle=False,
         num_workers=config.num_workers,
-        worker_init_fn=lambda worker_id: worker_init_fn(worker_id, base_seed) if config.num_workers > 0 else None,
+        worker_init_fn=worker_fn,
         pin_memory=config.pin_memory,
         persistent_workers=config.persistent_workers,
     )
@@ -133,13 +136,15 @@ def retrain_and_evaluate(train_data, val_data, test_data,
 
     train_dataset = LoadDataset(train_data, seq_len=config.seq_len)
     val_dataset = LoadDataset(val_data, seq_len=config.seq_len)
+    worker_fn = partial(worker_init_fn, base_seed=base_seed) if config.num_workers > 0 else None
+
 
     train_loader = DataLoader(
         train_dataset,
         batch_size=_get_retrain_batch_size(config),
         shuffle=True,
         num_workers=config.num_workers,
-        worker_init_fn=lambda worker_id: worker_init_fn(worker_id, base_seed) if config.num_workers > 0 else None,
+        worker_init_fn=worker_fn,
         pin_memory=config.pin_memory,
         persistent_workers=config.persistent_workers,
         drop_last=False,
@@ -149,7 +154,7 @@ def retrain_and_evaluate(train_data, val_data, test_data,
         batch_size=_get_retrain_batch_size(config),
         shuffle=False,
         num_workers=config.num_workers,
-        worker_init_fn=lambda worker_id: worker_init_fn(worker_id, base_seed) if config.num_workers > 0 else None,
+        worker_init_fn=worker_fn,
         pin_memory=config.pin_memory,
         persistent_workers=config.persistent_workers,
     )
@@ -236,7 +241,7 @@ def retrain_and_evaluate(train_data, val_data, test_data,
         batch_size=_get_retrain_batch_size(config),
         shuffle=False,
         num_workers=config.num_workers,
-        worker_init_fn=lambda worker_id: worker_init_fn(worker_id, base_seed) if config.num_workers > 0 else None,
+        worker_init_fn=worker_fn,
         pin_memory=config.pin_memory,
         persistent_workers=config.persistent_workers,
     )
