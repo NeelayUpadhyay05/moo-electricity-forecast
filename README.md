@@ -1,108 +1,84 @@
 
 # MOO-Electricity-Forecast
 
-Research benchmark for hourly univariate electricity-load forecasting. The repository compares eight forecasting methods across multiple zones and seeds, with consistent evaluation budgets and dedicated multi-objective analyses.
+Research benchmark for hourly electricity-load forecasting across three datasets and six selected regions. The project compares eight forecasting methods under matched training budgets, with repeated runs over seeds and a statistical analysis notebook for method ranking and pairwise significance testing.
 
-Highlights
-- Eight methods: two multi-objective (Musk Ox MO-LSTM, NSGA-II) and six single-objective / direct predictors.
-- Standardized results saved per seed and zone under `results/seed_{n}/{zone}/`.
-- Analysis notebook `notebooks/analysis.ipynb` performs Friedman/Nemenyi, Wilcoxon tests, dominance checks, and knee-point selection.
+## Current benchmark
 
----
+Selected regions:
+- PJM: `PJME`, `AEP`
+- NYISO: `NEW_YORK_CITY`, `LONG_ISLAND`
+- India: `NATIONAL`, `NORTHERN`
+
+Evaluation setup:
+- 8 methods
+- 6 regions
+- 5 shared seeds for PJM, NYISO, and India
+- 5 additional seeds for NYISO only
+
+The processed data format is the same univariate train/val/test split used by the existing training code.
 
 ## Methods
 
-Multi-objective methods (optimize `val_mse` and `complexity`):
+Multi-objective methods:
+- `musk_ox_multi_lstm` - Musk Ox MOEA for LSTM hyperparameter search
+- `nsga2_direct` - NSGA-II baseline
 
-- `musk_ox_multi_lstm` — Musk Ox MOEA (our MO-LSTM implementation)
-- `nsga2_direct` — NSGA-II baseline
+Single-objective and direct methods:
+- `baseline_lstm` - fixed LSTM baseline
+- `optuna_lstm` - Optuna TPE search
+- `random_search_lstm` - random hyperparameter search
+- `arima` - ARIMA statistical model
+- `lightgbm` - LightGBM on lag features
+- `cnn_lstm` - CNN-LSTM hybrid
 
-Single-objective or direct predictive methods (optimize `val_mse` or are fixed models):
+## Preprocessing
 
-- `baseline_lstm` — fixed LSTM (no search)
-- `optuna_lstm` — Optuna (single-objective TPE)
-- `random_search_lstm` — random search over the LSTM space
-- `arima` — ARIMA statistical model
-- `lightgbm` — LightGBM on lag features
-- `cnn_lstm` — CNN-LSTM hybrid
-
----
-
-## Datasets & Zones
-
-Processed data lives in `data/processed/`. Typical zone examples used in experiments:
-
-- PJM: `PJME`, `AEP`, `DAYTON`
-- NYISO: `NEW_YORK_CITY`, `LONG_ISLAND`, `CENTRAL`
-
-Splits are chronological (no shuffle): train 70% / val 15% / test 15%.
-
----
-
-## Metrics
-
-Reported metrics (saved to `metrics.json` for each run):
-
-- `rmse` — Root Mean Squared Error (MW)
-- `mae` — Mean Absolute Error (MW)
-- `mape` — Mean Absolute Percentage Error (%)
-- `r2` — Coefficient of determination
-- `hypervolume` — for multi-objective Pareto fronts
-
-The analysis notebook primarily uses `mape` and average ranks for statistical comparisons and includes hypervolume and dominance checks for multi-objective methods.
-
----
-
-## Layout (summary)
-
-```
-experiments/        # run_all.py + per-method runners
-src/                # models, training, data, optimizers
-data/               # raw/ and processed/ datasets
-results/            # per-seed per-zone outputs and pareto_front.csv for MOO
-checkpoints/        # saved checkpoints per seed/zone
-notebooks/          # analysis notebooks
-plots/              # exported figures
-tables/             # CSV summaries
-README.md
-requirements.txt
-```
-
-Per-run outputs: `results/seed_{n}/{zone}/{method}/metrics.json`. Multi-objective runs include `pareto_front.csv`.
-
----
-
-## Quick start
-
-1. Install dependencies:
+The new preprocessing entry point is:
 
 ```bash
-pip install -r requirements.txt
+python src/data/run_preprocess_all_selected.py
 ```
 
-2. Preprocess data (examples):
+This script regenerates the processed data under `data/processed/` for the selected six regions and also writes the NYISO selection snapshot under `data/processed/nyiso_selected/`.
 
-```bash
-python -m src.data.run_preprocessing --zone PJME
-python -m src.data.run_preprocessing --zone AEP
-python -m src.data.run_preprocessing --zone DAYTON
+Expected outputs per region:
+- `{ZONE}_train.csv`
+- `{ZONE}_val.csv`
+- `{ZONE}_test.csv`
+- `{ZONE}_scaling.json`
 
-# NYISO preprocessing
-python -m src.data.run_preprocessing --dataset nyiso --data_dir data/raw/NYISO
-```
+The preprocessing pipeline is chronological and leakage-safe:
+- clean and deduplicate timestamps
+- split 70% train / 15% validation / 15% test
+- normalize with training statistics only
+- save per-zone processed files for downstream experiments
 
-3. Run the benchmark (single seed & zone):
+## Statistical analysis
+
+Open `notebooks/analysis.ipynb` for the main paper analysis.
+
+The notebook is set up to do the following:
+- Friedman test across the 6 regions, treating regions as blocks and methods as treatments
+- Nemenyi post-hoc test when Friedman is significant
+- Wilcoxon rank-sum pairwise tests for MO-LSTM vs each baseline across seed runs
+- Holm-Bonferroni correction for the 7 pairwise Wilcoxon comparisons
+- Pareto dominance checks and knee-point selection for the multi-objective methods
+
+## Running experiments
+
+Run all methods for one region and one seed:
 
 ```bash
 python experiments/run_all.py --seed 42 --mode full --zone PJME
 ```
 
-Or run a specific runner (per-method scripts):
+Run a single method directly:
 
 ```bash
-python experiments/run_moo.py --seed 42 --mode full --zone PJME       # Musk Ox (MOO)
-python experiments/run_nsga2.py --seed 42 --mode full --zone PJME     # NSGA-II (MOO)
-python experiments/run_optuna.py --seed 42 --mode full --zone PJME    # Optuna (SO)
+python experiments/run_moo.py --seed 42 --mode full --zone PJME
+python experiments/run_nsga2.py --seed 42 --mode full --zone PJME
+python experiments/run_optuna.py --seed 42 --mode full --zone PJME
 python experiments/run_random_search.py --seed 42 --mode full --zone PJME
 python experiments/run_baseline.py --seed 42 --mode full --zone PJME
 python experiments/run_arima.py --seed 42 --mode full --zone PJME
@@ -110,36 +86,31 @@ python experiments/run_lightgbm.py --seed 42 --mode full --zone PJME
 python experiments/run_cnn_lstm.py --seed 42 --mode full --zone PJME
 ```
 
-`--mode dev` uses reduced budgets for faster debugging; `--mode full` uses reporting budgets.
+Use `--mode dev` for fast debugging and `--mode full` for the main benchmark budget.
 
----
+## Output layout
 
-## Analysis
+Key folders:
 
-Open `notebooks/analysis.ipynb` to reproduce the paper-quality analyses:
+```text
+data/raw/                 # original source data
+data/processed/           # regenerated train/val/test splits and scaling files
+results/seed_{n}/{zone}/   # metrics and method outputs per seed and region
+checkpoints/              # saved model checkpoints
+tables/                   # CSV summaries from analysis
+plots/                    # analysis figures
+notebooks/                # analysis and runner notebooks
+src/                      # data, models, training, optimizers, utilities
+experiments/              # per-method runners and batch runner
+```
 
-- Friedman test + Nemenyi post-hoc (global ranking)
-- Wilcoxon (Mann–Whitney U) pairwise tests (MO-LSTM vs others) with FDR correction
-- Pareto dominance checks (MO-LSTM vs NSGA-II)
-- Knee-point selection for representative multi-objective solutions
-
-The notebook exports tables to `tables/` and plots to `plots/`.
-
----
+Each method writes its metrics to `results/seed_{n}/{zone}/{method}/metrics.json`. Multi-objective runs also write `pareto_front.csv`.
 
 ## Reproducibility
 
-- Seeds are set for Python / NumPy / PyTorch via `src/utils/seed.py`.
-- Data loading uses multi-worker processes with deterministic seeding for reproducibility.
-- All results are versioned by seed and zone for easy tracking and replication.
-
----
-
-## Contributing
-
-To add a method: add a runner under `experiments/`, a training wrapper under `src/`, and update `src/config.py` to register the method. Please open an issue first for design discussion.
-
----
+- Random seeds are centralized in `src/utils/seed.py`.
+- Training and evaluation use the same deterministic split convention across all methods.
+- The repository keeps the processed format stable so the same model code can be reused after regenerating data.
 
 ## License
 

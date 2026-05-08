@@ -33,6 +33,7 @@ def save_results(out_dir, runtime, test_metrics, best_hyperparams, search_histor
         "test_mae": float(test_metrics["mae"]),
         "test_mape": float(test_metrics["mape"]),
         "test_r2": float(test_metrics["r2"]),
+        "runtime": float(runtime),
         "best_hyperparams": best_hyperparams,
         "search_history": search_history,
     }

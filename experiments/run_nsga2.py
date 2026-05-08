@@ -33,6 +33,7 @@ def save_results(out_dir, runtime, test_metrics, best_hyperparams, pareto_object
         "test_mae": float(test_metrics["mae"]),
         "test_mape": float(test_metrics["mape"]),
         "test_r2": float(test_metrics["r2"]),
+        "runtime": float(runtime),
         "hypervolume": float(hv),
         "objectives": ["val_mse", "complexity"],
         "best_hyperparams": best_hyperparams,

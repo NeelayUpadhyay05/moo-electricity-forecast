@@ -116,6 +116,7 @@ def main():
                 "Test MAE (MW)": m.get("test_mae", "N/A"),
                 "Test MAPE (%)": m.get("test_mape", "N/A"),
                 "Test R2": m.get("test_r2", "N/A"),
+                "Runtime (s)": m.get("runtime", "N/A"),
                 "Objectives": m.get("objectives", ["single"]),
             }
             summary_rows.append(row)
