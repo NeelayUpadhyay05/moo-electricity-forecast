@@ -107,13 +107,13 @@ class Config:
         # -----------------------
         self.model_list = [
             "baseline_lstm",
-            "musk_ox_multi_lstm",
-            "random_search_lstm",
-            "optuna_lstm",
-            "nsga2_direct",
             "arima",
             "lightgbm",
             "cnn_lstm",
+            "random_search_lstm",
+            "optuna_lstm",
+            "nsga2_direct",
+            "musk_ox_multi_lstm",
         ]
 
         # Set of model keys treated as multi-objective optimizations.

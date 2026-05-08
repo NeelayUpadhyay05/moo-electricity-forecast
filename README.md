@@ -73,6 +73,8 @@ Run all methods for one region and one seed:
 python experiments/run_all.py --seed 42 --mode full --zone PJME
 ```
 
+`run_all.py` executes methods in this order: baseline, arima, lightgbm, cnn_lstm, random_search, optuna, nsga2, then musk_ox.
+
 Run a single method directly:
 
 ```bash
