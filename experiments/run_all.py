@@ -126,8 +126,8 @@ def main():
     summary_df = pd.DataFrame(summary_rows)
     print(summary_df.to_string(index=False))
 
-    # Save aggregated results
-    summary_path = f"results/seed_{args.seed}/{args.zone}/summary.json"
+    # Save aggregated results (include zone in filename to avoid overwriting)
+    summary_path = f"results/seed_{args.seed}/summary_{args.zone}.json"
     os.makedirs(os.path.dirname(summary_path), exist_ok=True)
     with open(summary_path, "w") as f:
         json.dump(results, f, indent=4)
