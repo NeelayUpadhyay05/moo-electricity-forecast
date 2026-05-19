@@ -2,12 +2,12 @@ import numpy as np
 
 
 class NSGA2:
-        """Compact NSGA-II implementation for the project optimizer API.
+    """Compact NSGA-II implementation for the project optimizer API.
 
-        Usage:
-            nsga = NSGA2(fitness_fn, bounds, pop_size, generations, seed)
-            pareto_solutions, history = nsga.optimize()
-        """
+    Usage:
+        nsga = NSGA2(fitness_fn, bounds, pop_size, generations, seed)
+        pareto_solutions, history = nsga.optimize()
+    """
 
     def __init__(
         self,
