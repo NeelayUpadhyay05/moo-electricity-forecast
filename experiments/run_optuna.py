@@ -22,7 +22,7 @@ from src.config import Config
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 
-def save_results(out_dir, runtime, test_metrics, best_hyperparams, search_history, seed, mode):
+def save_results(out_dir, runtime, test_metrics, best_hyperparams, seed, mode):
     result = {
         "seed": seed,
         "mode": mode,
@@ -32,7 +32,6 @@ def save_results(out_dir, runtime, test_metrics, best_hyperparams, search_histor
         "test_r2": float(test_metrics["r2"]),
         "runtime": float(runtime),
         "best_hyperparams": best_hyperparams,
-        "search_history": search_history,
     }
     with open(os.path.join(out_dir, "metrics.json"), "w") as f:
         json.dump(result, f, indent=4)
@@ -159,7 +158,6 @@ def run_optuna(train_df, val_df, test_df, scaling_params, device, config, seed=4
             "lr": best_config.lr,
             "dropout": best_config.dropout,
         },
-        search_history=search_history,
         seed=seed,
         mode=config.mode,
     )
