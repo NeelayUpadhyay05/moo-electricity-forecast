@@ -43,12 +43,15 @@ def run_arima(train_df, val_df, test_df, scaling_params, config, seed=42, zone="
     fitted = fit_arima(train_vals, order=config.arima_order)
     preds = forecast_arima(fitted, steps=len(test_vals))
 
-    # Evaluate on normalized values to match the training scale.
-    rmse = calculate_rmse(preds, test_vals)
-    mae = calculate_mae(preds, test_vals)
-    
-    epsilon = 1e-8
-    mape = float(np.mean(np.abs(preds - test_vals) / np.clip(np.abs(test_vals), epsilon, None)) * 100)
+    # Convert back to original MW scale for RMSE/MAE/MAPE
+    preds_orig = preds * std + mean
+    test_orig = test_vals * std + mean
+
+    rmse = calculate_rmse(preds_orig, test_orig)
+    mae = calculate_mae(preds_orig, test_orig)
+    mape = calculate_mape(preds_orig, test_orig)
+
+    # R2 strictly on normalized values
     r2 = calculate_r2(preds, test_vals)
 
     runtime = time.time() - start

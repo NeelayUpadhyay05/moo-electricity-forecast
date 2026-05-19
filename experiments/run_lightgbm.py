@@ -61,12 +61,15 @@ def run_lightgbm(train_df, val_df, test_df, scaling_params, config, seed=42, zon
     X_test = X_all[start_idx: start_idx + len(test_series)]
     preds = predict_lightgbm(model, X_test)[:len(test_series)]
 
-    # Evaluate on normalized values to match the training scale.
-    rmse = calculate_rmse(preds, test_series)
-    mae = calculate_mae(preds, test_series)
-    
-    epsilon = 1e-8
-    mape = float(np.mean(np.abs(preds - test_series) / np.clip(np.abs(test_series), epsilon, None)) * 100)
+    # Convert back to original MW scale for RMSE/MAE/MAPE
+    preds_orig = preds * std + mean
+    test_orig = test_series * std + mean
+
+    rmse = calculate_rmse(preds_orig, test_orig)
+    mae = calculate_mae(preds_orig, test_orig)
+    mape = calculate_mape(preds_orig, test_orig)
+
+    # R2 strictly on normalized values
     r2 = calculate_r2(preds, test_series)
 
     runtime = time.time() - start

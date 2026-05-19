@@ -88,12 +88,15 @@ def run_cnn_lstm(train_df, val_df, test_df, scaling_params, device, config, seed
         X_test_t = torch.from_numpy(X_test).float().to(device)
         preds = model(X_test_t).cpu().numpy()
 
-    # Evaluate on normalized values to match the training scale.
-    rmse = calculate_rmse(preds, y_test)
-    mae = calculate_mae(preds, y_test)
-    
-    epsilon = 1e-8
-    mape = float(np.mean(np.abs(preds - y_test) / np.clip(np.abs(y_test), epsilon, None)) * 100)
+    # Convert back to original MW scale for RMSE/MAE/MAPE
+    preds_orig = preds * std + mean
+    y_test_orig = y_test * std + mean
+
+    rmse = calculate_rmse(preds_orig, y_test_orig)
+    mae = calculate_mae(preds_orig, y_test_orig)
+    mape = calculate_mape(preds_orig, y_test_orig)
+
+    # R2 strictly on normalized values
     r2 = calculate_r2(preds, y_test)
 
     runtime = time.time() - start

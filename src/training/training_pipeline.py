@@ -260,18 +260,19 @@ def retrain_and_evaluate(train_data, val_data, test_data,
     pred_norm = np.concatenate(all_predictions)
     targ_norm = np.concatenate(all_targets_normalized)
 
-    # Calculate metrics on normalized values to avoid data leakage.
-    rmse = float(np.sqrt(np.mean((pred_norm - targ_norm) ** 2)))
-    mae = float(np.mean(np.abs(pred_norm - targ_norm)))
+    # Convert back to original MW scale for RMSE/MAE/MAPE to fix MAPE explosion
+    pred_orig = pred_norm * std + mean
+    targ_orig = targ_norm * std + mean
+
+    rmse = float(np.sqrt(np.mean((pred_orig - targ_orig) ** 2)))
+    mae = float(np.mean(np.abs(pred_orig - targ_orig)))
+    mape = float(np.mean(np.abs(pred_orig - targ_orig) / np.abs(targ_orig)) * 100)
     
-    # Epsilon clipping prevents division by zero on normalized data.
-    epsilon = 1e-8
-    mape = float(np.mean(np.abs(pred_norm - targ_norm) / np.clip(np.abs(targ_norm), epsilon, None)) * 100)
-    
+    # R2 must remain on normalized values
     r2 = calculate_r2(pred_norm, targ_norm)
 
     print(
-        f"[Final Test]  RMSE: {rmse:.4f} (Norm)  MAE: {mae:.4f} (Norm)  MAPE: {mape:.2f}% (Norm)  R2: {r2:.4f}"
+        f"[Final Test]  RMSE: {rmse:.4f} MW  MAE: {mae:.4f} MW  MAPE: {mape:.2f}%  R2: {r2:.4f}"
     )
     print(f"Model saved to: {config.checkpoint_path}")
 
