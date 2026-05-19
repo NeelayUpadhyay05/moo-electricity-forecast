@@ -12,11 +12,11 @@ class CNNLSTM(nn.Module):
         self.fc = nn.Linear(lstm_hidden, 1)
 
     def forward(self, x):
-        # x: (batch, seq_len)
-        x = x.unsqueeze(1)  # (batch, 1, seq_len)
-        x = self.conv(x)    # (batch, conv_channels, seq_len)
+        # x arrives as (batch, seq_len).
+        x = x.unsqueeze(1)  # shape (batch, 1, seq_len)
+        x = self.conv(x)    # shape (batch, conv_channels, seq_len)
         x = self.relu(x)
-        x = x.permute(0, 2, 1)  # (batch, seq_len, conv_channels)
+        x = x.permute(0, 2, 1)  # shape (batch, seq_len, conv_channels)
         out, _ = self.lstm(x)
         out = out[:, -1, :]
         out = self.dropout(out)

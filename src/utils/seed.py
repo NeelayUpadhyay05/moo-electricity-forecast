@@ -6,7 +6,7 @@ import torch
 
 def set_seed(seed: int = 42):
     """
-    Set all random seeds for reproducibility.
+    Seed Python, NumPy, and PyTorch for reproducibility.
     """
 
     random.seed(seed)
@@ -15,26 +15,25 @@ def set_seed(seed: int = 42):
     torch.cuda.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
 
-    # Ensures deterministic behavior
+    # Force deterministic behavior where possible.
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-    # Surface any remaining non-deterministic ops; warn_only avoids crashes
-    # on ops that have no deterministic implementation.
+    # Surface remaining non-deterministic ops; warn_only avoids hard failures
+    # for ops that lack deterministic implementations.
     torch.use_deterministic_algorithms(True, warn_only=True)
 
-    # For extra determinism (optional but recommended)
+    # Extra determinism for cuBLAS (optional but recommended).
     os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 
 
 def worker_init_fn(worker_id: int, base_seed: int = 42):
     """
-    Initialize worker process with a deterministic seed.
-    
-    This function is used as the worker_init_fn for PyTorch DataLoaders
-    to ensure reproducibility when num_workers > 0. Each worker gets
-    a unique seed derived from the base seed.
-    
+    Initialize a worker process with a deterministic seed.
+
+    Use this as the DataLoader worker_init_fn when num_workers > 0.
+    Each worker gets a unique seed derived from the base seed.
+
     Args:
         worker_id: assigned by PyTorch DataLoader
         base_seed: the main random seed (typically from set_seed)

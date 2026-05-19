@@ -1,5 +1,4 @@
 import numpy as np
-import uuid
 import os
 from src.config import Config
 from src.models.lstm import LSTMModel, count_parameters
@@ -16,11 +15,10 @@ def decode_particle_to_config(particle, mode):
     config.lr = float(np.clip(10 ** particle[2], b["lr"][0], b["lr"][1]))
     config.dropout = float(np.clip(particle[3], b["dropout"][0], b["dropout"][1]))
 
-    # Ensure each HPO evaluation writes to a unique checkpoint to avoid clobbering
-    fname = f"hpo_{uuid.uuid4().hex}.pt"
-    config.checkpoint_path = os.path.join("checkpoints", "hpo", fname)
-    # Propagate experiment-level seed (if set by runners) so DataLoader workers
-    # use a consistent base seed during HPO evaluations.
+    # Reuse one temp checkpoint during the search phase.
+    config.checkpoint_path = os.path.join("checkpoints", "temp", "moo_search_temp.pt")
+    # Propagate the experiment seed so DataLoader workers stay consistent
+    # during HPO evaluations.
     try:
         config.seed = int(os.environ.get("EXPERIMENT_SEED", 42))
     except Exception:
@@ -63,9 +61,7 @@ def evaluate_multi_objective(particle, train_df, val_df, device, mode, log_prefi
     return float(val_mse), int(n_params)
 
 
-# --------------------------------------------------
-# PSO Fitness (Multi Objective)
-# --------------------------------------------------
+# PSO fitness (multi-objective)
 
 def pso_fitness(particle, train_df, val_df, device, mode):
     return evaluate_multi_objective(
@@ -78,9 +74,7 @@ def pso_fitness(particle, train_df, val_df, device, mode):
     )
 
 
-# --------------------------------------------------
-# MOO Fitness (Multi Objective)
-# --------------------------------------------------
+# MOO fitness (multi-objective)
 
 def moo_fitness(particle, train_df, val_df, device, mode):
     return evaluate_multi_objective(

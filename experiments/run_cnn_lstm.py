@@ -52,10 +52,10 @@ def run_cnn_lstm(train_df, val_df, test_df, scaling_params, device, config, seed
     val_series = val_df.iloc[:, 0].values
     test_series = test_df.iloc[:, 0].values
 
-    # Train only on training data (consistent with LSTM search phase fairness)
+    # Build train windows from the training split only.
     X_train, y_train = make_dataset(train_series, seq_len)
     X_test_all, y_test_all = make_dataset(np.concatenate([train_series, val_series, test_series]), seq_len)
-    # test portion at end
+    # Slice out the test window segment at the end.
     start_idx = len(train_series) + len(val_series) - seq_len
     X_test = X_test_all[start_idx: start_idx + len(test_series)]
     y_test = y_test_all[start_idx: start_idx + len(test_series)]
@@ -88,20 +88,13 @@ def run_cnn_lstm(train_df, val_df, test_df, scaling_params, device, config, seed
         X_test_t = torch.from_numpy(X_test).float().to(device)
         preds = model(X_test_t).cpu().numpy()
 
-    # Compute metrics
-    # `preds` and `y_test` are normalized (from processed files). Convert
-    # back to original MW scale for RMSE/MAE/MAPE to match LSTM reporting.
-    preds_orig = preds * std + mean
-    y_test_orig = y_test * std + mean
-
-    rmse = calculate_rmse(preds_orig, y_test_orig)
-    mae = calculate_mae(preds_orig, y_test_orig)
-    mape = calculate_mape(preds_orig, y_test_orig)
-
-    # R2 on normalized values
-    preds_norm = preds
-    y_test_norm = y_test
-    r2 = calculate_r2(preds_norm, y_test_norm)
+    # Evaluate on normalized values to match the training scale.
+    rmse = calculate_rmse(preds, y_test)
+    mae = calculate_mae(preds, y_test)
+    
+    epsilon = 1e-8
+    mape = float(np.mean(np.abs(preds - y_test) / np.clip(np.abs(y_test), epsilon, None)) * 100)
+    r2 = calculate_r2(preds, y_test)
 
     runtime = time.time() - start
     out_dir = f"results/seed_{seed}/{zone}/cnn_lstm"

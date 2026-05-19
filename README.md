@@ -13,8 +13,7 @@ Selected regions:
 Evaluation setup:
 - 8 methods
 - 6 regions
-- 5 shared seeds for PJM, NYISO, and India
-- 5 additional seeds for NYISO only
+- 10 seeds
 
 The processed data format is the same univariate train/val/test split used by the existing training code.
 

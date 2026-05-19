@@ -22,10 +22,10 @@ RUNNER_MAP = {
 
 
 def run_experiment(model_name, seed, mode, zone, timeout=None):
-    """Run an experiment for a single model and return metrics.
-    
+    """Run a single model runner and load its metrics.
+
     Args:
-        timeout: Timeout in seconds. If None, no timeout is enforced.
+        timeout: Seconds before the runner is killed; None disables the timeout.
     """
     if model_name not in RUNNER_MAP:
         print(f"⚠ Unknown model: {model_name}")
@@ -47,7 +47,7 @@ def run_experiment(model_name, seed, mode, zone, timeout=None):
 
     try:
         result = subprocess.run(cmd, check=True, capture_output=False, text=True, timeout=timeout)
-        # Infer output dir from runner convention
+        # Derive output dir from the runner naming convention.
         if model_name == "baseline_lstm":
             out_dir = f"results/seed_{seed}/{zone}/baseline"
         elif model_name == "musk_ox_multi_lstm":
@@ -101,7 +101,7 @@ def main():
         if metrics:
             results[model_name] = metrics
 
-    # Aggregate and display results
+    # Summarize metrics across models.
     print(f"\n\n{'='*70}")
     print("RESULTS SUMMARY")
     print(f"{'='*70}\n")
@@ -126,8 +126,8 @@ def main():
     summary_df = pd.DataFrame(summary_rows)
     print(summary_df.to_string(index=False))
 
-    # Save aggregated results (include zone in filename to avoid overwriting)
-    summary_path = f"results/seed_{args.seed}/summary_{args.zone}.json"
+    # Write a per-zone summary so runs do not clobber each other.
+    summary_path = f"results/seed_{args.seed}/{args.zone}/summary_{args.zone}.json"
     os.makedirs(os.path.dirname(summary_path), exist_ok=True)
     with open(summary_path, "w") as f:
         json.dump(results, f, indent=4)

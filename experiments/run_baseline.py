@@ -16,9 +16,6 @@ from src.training.training_pipeline import (
 from src.config import Config
 
 
-# ==========================================================
-# Result Saving
-# ==========================================================
 def save_results(out_dir, runtime, test_metrics, best_hyperparams, seed, mode):
     result = {
         "seed": seed,
@@ -35,9 +32,6 @@ def save_results(out_dir, runtime, test_metrics, best_hyperparams, seed, mode):
     print(f"Results saved to {out_dir}/metrics.json")
 
 
-# ==========================================================
-# Data Loading (Mode Aware)
-# ==========================================================
 def load_data(config, zone="PJME"):
 
     base = f"data/processed/{zone}"
@@ -57,9 +51,6 @@ def load_data(config, zone="PJME"):
     return train_df, val_df, test_df, scaling_params
 
 
-# ==========================================================
-# Baseline
-# ==========================================================
 def run_baseline(train_df, val_df, test_df, scaling_params, device, config, seed=42, zone="PJME"):
 
     set_seed(seed)
@@ -112,9 +103,6 @@ def run_baseline(train_df, val_df, test_df, scaling_params, device, config, seed
     return val_mse, test_metrics["rmse"], runtime
 
 
-# ==========================================================
-# Main
-# ==========================================================
 def main():
 
     parser = argparse.ArgumentParser()

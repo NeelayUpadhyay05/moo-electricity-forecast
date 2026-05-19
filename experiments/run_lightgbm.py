@@ -49,32 +49,25 @@ def run_lightgbm(train_df, val_df, test_df, scaling_params, config, seed=42, zon
     val_series = val_df.iloc[:, 0].values
     test_series = test_df.iloc[:, 0].values
 
-    # Train only on training data (consistent with LSTM search phase fairness)
+    # Build train features from the training split only.
     X_train, y_train = build_lag_features(train_series, lags=lags)
     model = train_lightgbm(X_train, y_train, params=None, num_boost_round=100, seed=seed)
 
-    # Build test features using trailing lags from combined
+    # Build test features using trailing lags from the combined series.
     combined = np.concatenate([train_series, val_series, test_series])
     X_all, y_all = build_lag_features(combined, lags=lags)
-    # test starts after len(train)+len(val): compute index
+    # Test windows start after train+val.
     start_idx = len(train_series) + len(val_series) - lags
     X_test = X_all[start_idx: start_idx + len(test_series)]
     preds = predict_lightgbm(model, X_test)[:len(test_series)]
 
-    # Compute metrics
-    # Predictions and test_series are stored normalized in processed files.
-    # Convert back to original MW scale before RMSE/MAE/MAPE for comparability.
-    preds_orig = preds * std + mean
-    test_orig = test_series * std + mean
-
-    rmse = calculate_rmse(preds_orig, test_orig)
-    mae = calculate_mae(preds_orig, test_orig)
-    mape = calculate_mape(preds_orig, test_orig)
-
-    # R2 computed on normalized values for comparability with model training
-    preds_norm = preds
-    test_norm = test_series
-    r2 = calculate_r2(preds_norm, test_norm)
+    # Evaluate on normalized values to match the training scale.
+    rmse = calculate_rmse(preds, test_series)
+    mae = calculate_mae(preds, test_series)
+    
+    epsilon = 1e-8
+    mape = float(np.mean(np.abs(preds - test_series) / np.clip(np.abs(test_series), epsilon, None)) * 100)
+    r2 = calculate_r2(preds, test_series)
 
     runtime = time.time() - start
 

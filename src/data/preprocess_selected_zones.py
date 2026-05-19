@@ -11,6 +11,7 @@ def clean_time_series(series: pd.Series, interpolate: bool = True) -> pd.Series:
     series = pd.to_numeric(series, errors="coerce")
     series = series.sort_index()
     series = series[~series.index.duplicated(keep="last")]
+    series = series.resample('h').asfreq()
 
     if interpolate and series.isna().any():
         series = series.interpolate(method="time")
@@ -69,7 +70,7 @@ def extract_region_series(df: pd.DataFrame, column: str) -> pd.Series:
 
 def load_india_dataset(filepath: str) -> pd.DataFrame:
     df = pd.read_csv(filepath, parse_dates=[0])
-    # Ensure datetime column
+    # Ensure the datetime column is parsed.
     datetime_col = df.columns[0]
     df[datetime_col] = pd.to_datetime(df[datetime_col])
     return df

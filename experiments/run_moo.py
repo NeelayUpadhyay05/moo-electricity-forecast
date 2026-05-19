@@ -20,9 +20,6 @@ from src.metrics import calculate_hypervolume, calculate_igd
 from src.config import Config
 
 
-# ==========================================================
-# Result Saving
-# ==========================================================
 def save_results(out_dir, runtime, test_metrics, best_hyperparams, pareto_objectives, seed, mode):
     hv = calculate_hypervolume(pareto_objectives)
     
@@ -43,9 +40,6 @@ def save_results(out_dir, runtime, test_metrics, best_hyperparams, pareto_object
     print(f"Results saved to {out_dir}/metrics.json")
 
 
-# ==========================================================
-# Data Loading (Mode Aware)
-# ==========================================================
 def load_data(config, zone="PJME"):
 
     base = f"data/processed/{zone}"
@@ -65,13 +59,10 @@ def load_data(config, zone="PJME"):
     return train_df, val_df, test_df, scaling_params
 
 
-# ==========================================================
-# MOO
-# ==========================================================
 def run_moo(train_df, val_df, test_df, scaling_params, device, config, seed=42, zone="PJME"):
 
     set_seed(seed)
-    # propagate seed into environment so HPO fitness configs inherit it
+    # Expose the seed to HPO helpers via the environment.
     os.environ["EXPERIMENT_SEED"] = str(seed)
     print("\n================ MOO =================")
     start = time.time()
@@ -79,7 +70,7 @@ def run_moo(train_df, val_df, test_df, scaling_params, device, config, seed=42, 
     b = config.hp_bounds
     bounds = [
         tuple(b["hidden_dim"]),
-        (b["num_layers"][0] - 0.5, b["num_layers"][1] + 0.5),  # ±0.5 offset: equal probability for each integer after round+clip
+        (b["num_layers"][0] - 0.5, b["num_layers"][1] + 0.5),  # Add +/-0.5 so rounding gives uniform integer odds.
         (np.log10(b["lr"][0]), np.log10(b["lr"][1])),
         tuple(b["dropout"]),
     ]
@@ -96,26 +87,31 @@ def run_moo(train_df, val_df, test_df, scaling_params, device, config, seed=42, 
 
     pareto_solutions, history = moo.optimize()
 
-    # Build Pareto front metadata from search phase (no extra training yet)
+    def _decode_solution_params(solution_params):
+        hidden_dim, num_layers, lr, dropout = solution_params
+        b = config.hp_bounds
+        return {
+            "hidden_dim": int(np.clip(np.round(hidden_dim), b["hidden_dim"][0], b["hidden_dim"][1])),
+            "num_layers": int(np.clip(np.round(num_layers), b["num_layers"][0], b["num_layers"][1])),
+            "lr": float(np.clip(10 ** lr, b["lr"][0], b["lr"][1])),
+            "dropout": float(np.clip(dropout, b["dropout"][0], b["dropout"][1])),
+        }
+
+    # Build Pareto front metadata from the search phase only.
     evaluated = []
     for solution in pareto_solutions:
-        hidden_dim, num_layers, lr, dropout = solution["params"]
+        hyperparams = _decode_solution_params(solution["params"])
         evaluated.append({
             "val_mse":    solution["val_mse"],
             "complexity": solution["complexity"],
-            "hyperparams": {
-                "hidden_dim": int(np.round(hidden_dim)),
-                "num_layers": int(np.round(num_layers)),
-                "lr":         float(10 ** lr),
-                "dropout":    float(dropout),
-            },
+            "hyperparams": hyperparams,
         })
 
-    # Select best Pareto solution by validation MSE
+    # Pick the Pareto solution with the lowest validation MSE.
     best_val_solution = min(evaluated, key=lambda x: x["val_mse"])
     best_hp = best_val_solution["hyperparams"]
 
-    # Retrain only the best solution — same single retrain as every other method
+    # Retrain only the best solution to match other methods.
     best_config = Config(mode=config.mode)
     best_config.hidden_dim = best_hp["hidden_dim"]
     best_config.num_layers = best_hp["num_layers"]
@@ -136,7 +132,7 @@ def run_moo(train_df, val_df, test_df, scaling_params, device, config, seed=42, 
     out_dir = f"results/seed_{seed}/{zone}/musk_ox"
     os.makedirs(out_dir, exist_ok=True)
 
-    # Save Pareto front (val_mse / complexity only)
+    # Save the Pareto front with just objective values.
     pareto_rows = [
         {
             "hidden_dim": e["hyperparams"]["hidden_dim"],
@@ -152,7 +148,7 @@ def run_moo(train_df, val_df, test_df, scaling_params, device, config, seed=42, 
         os.path.join(out_dir, "pareto_front.csv"), index=False
     )
     
-    # Extract pareto objectives for hypervolume calculation
+    # Extract objective pairs for hypervolume calculation.
     pareto_objs = np.array([[e["val_mse"], e["complexity"]] for e in evaluated])
 
     save_results(
@@ -177,9 +173,6 @@ def run_moo(train_df, val_df, test_df, scaling_params, device, config, seed=42, 
     )
 
 
-# ==========================================================
-# Main
-# ==========================================================
 def main():
 
     parser = argparse.ArgumentParser()

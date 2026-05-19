@@ -19,9 +19,6 @@ from src.training.training_pipeline import (
 from src.config import Config
 
 
-# ==========================================================
-# Result Saving
-# ==========================================================
 def save_results(out_dir, runtime, test_metrics, best_hyperparams, search_history, seed, mode):
     result = {
         "seed": seed,
@@ -39,9 +36,6 @@ def save_results(out_dir, runtime, test_metrics, best_hyperparams, search_histor
     print(f"Results saved to {out_dir}/metrics.json")
 
 
-# ==========================================================
-# Data Loading (Mode Aware)
-# ==========================================================
 def load_data(config, zone="PJME"):
 
     base = f"data/processed/{zone}"
@@ -61,9 +55,6 @@ def load_data(config, zone="PJME"):
     return train_df, val_df, test_df, scaling_params
 
 
-# ==========================================================
-# Random Search
-# ==========================================================
 def dominates(a, b):
     return ((a[0] <= b[0] and a[1] <= b[1]) and (a[0] < b[0] or a[1] < b[1]))
 
@@ -71,7 +62,7 @@ def dominates(a, b):
 def run_random_search(train_df, val_df, test_df, scaling_params, device, config, seed=42, zone="PJME"):
 
     set_seed(seed)
-    # propagate seed to HPO/configs
+    # Expose the seed via the environment for HPO/configs.
     os.environ["EXPERIMENT_SEED"] = str(seed)
     print("\n================ RANDOM SEARCH =================")
     start = time.time()
@@ -79,7 +70,7 @@ def run_random_search(train_df, val_df, test_df, scaling_params, device, config,
     best_val = float("inf")
     convergence = []
     search_history = []
-    # single-objective search: track best by validation MSE
+    # Single-objective search: track best by validation MSE.
     best_solution = None
 
     for trial in range(config.n_trials):
@@ -93,7 +84,8 @@ def run_random_search(train_df, val_df, test_df, scaling_params, device, config,
         trial_config.num_layers = random.randint(b["num_layers"][0], b["num_layers"][1])
         trial_config.lr = 10 ** random.uniform(math.log10(b["lr"][0]), math.log10(b["lr"][1]))
         trial_config.dropout = random.uniform(b["dropout"][0], b["dropout"][1])
-        trial_config.checkpoint_path = f"checkpoints/seed_{seed}/{zone}/random_trial_{trial+1}.pt"
+        # Reuse one temp checkpoint during the search phase.
+        trial_config.checkpoint_path = f"checkpoints/temp/random_search_temp.pt"
 
         os.makedirs(os.path.dirname(trial_config.checkpoint_path), exist_ok=True)
 
@@ -141,7 +133,7 @@ def run_random_search(train_df, val_df, test_df, scaling_params, device, config,
             "complexity": int(complexity),
         }
 
-        # Update best by validation MSE
+        # Update the best by validation MSE.
         if best_solution is None or current["val_mse"] < best_solution["val_mse"]:
             best_solution = current
 
@@ -188,9 +180,6 @@ def run_random_search(train_df, val_df, test_df, scaling_params, device, config,
     return best_solution["val_mse"], test_metrics["rmse"], runtime
 
 
-# ==========================================================
-# Main
-# ==========================================================
 def main():
 
     parser = argparse.ArgumentParser()

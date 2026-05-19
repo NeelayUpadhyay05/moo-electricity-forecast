@@ -46,16 +46,16 @@ def process_nyiso(data_dir, save_dir, zones, selection_dir, train_ratio, val_rat
     os.makedirs(selection_dir, exist_ok=True)
     combined.to_csv(os.path.join(selection_dir, "nyiso_combined.csv"), index=False)
     for zone in zones:
-        # Attempt to find columns matching zone names
+        # Try to find columns that match zone names.
         candidates = [c for c in combined.columns if zone.replace('_', ' ').upper().replace('  ', ' ') in c.upper() or c.endswith('Actual Load (MW)') and zone in c.upper()]
-        # Preferred explicit mapping for known zones
+        # Preferred explicit mapping for known zones.
         mapping = {
             'NEW_YORK_CITY': 'J - New York City Actual Load (MW)',
             'LONG_ISLAND': 'K - Long Island Actual Load (MW)'
         }
         col = mapping.get(zone, None)
         if col is None:
-            # fallback: find by slug
+            # Fallback: best-effort match by slug.
             matches = [c for c in combined.columns if zone in c.upper()]
             col = matches[0] if matches else None
 
@@ -80,7 +80,7 @@ def process_india(filepath, save_dir, zones, train_ratio, val_ratio):
     df = load_india_dataset(filepath)
     dt_col = df.columns[0]
     for zone in zones:
-        # Map expected column names
+        # Map expected column names.
         mapping = {
             'NATIONAL': 'National Hourly Demand',
             'NORTHERN': 'Northen Region Hourly Demand',
@@ -99,7 +99,7 @@ def process_india(filepath, save_dir, zones, train_ratio, val_ratio):
 
 
 def clean_wrapper(series):
-    # lightweight wrapper to avoid circular import
+    # Lightweight wrapper to avoid a circular import.
     series = pd.to_numeric(series, errors='coerce')
     series = series.sort_index()
     series = series[~series.index.duplicated(keep='last')]
@@ -120,13 +120,13 @@ def main():
     parser.add_argument('--val_ratio', type=float, default=0.15)
     args = parser.parse_args()
 
-    # PJM
+    # Process PJM
     process_pjm(args.data_dir_pjm, args.save_dir, ZONE_MAP['PJM'], args.train_ratio, args.val_ratio)
 
-    # NYISO
+    # Process NYISO
     process_nyiso(args.data_dir_nyiso, args.save_dir, ZONE_MAP['NYISO'], args.selection_dir, args.train_ratio, args.val_ratio)
 
-    # India
+    # Process India
     process_india(args.data_file_india, args.save_dir, ZONE_MAP['INDIA'], args.train_ratio, args.val_ratio)
 
     print('Preprocessing completed.')

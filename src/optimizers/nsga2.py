@@ -2,12 +2,12 @@ import numpy as np
 
 
 class NSGA2:
-    """A compact NSGA-II implementation compatible with the project's optimizer API.
+        """Compact NSGA-II implementation for the project optimizer API.
 
-    API:
-      nsga = NSGA2(fitness_fn, bounds, pop_size, generations, seed)
-      pareto_solutions, history = nsga.optimize()
-    """
+        Usage:
+            nsga = NSGA2(fitness_fn, bounds, pop_size, generations, seed)
+            pareto_solutions, history = nsga.optimize()
+        """
 
     def __init__(
         self,
@@ -40,7 +40,7 @@ class NSGA2:
 
     @staticmethod
     def dominates(a, b):
-        # a and b are objective vectors (minimize)
+        # a and b are objective vectors to minimize.
         return ((a[0] <= b[0] and a[1] <= b[1]) and (a[0] < b[0] or a[1] < b[1]))
 
     def non_dominated_sort(self, objectives):
@@ -132,6 +132,25 @@ class NSGA2:
                 y[i] = np.clip(y[i] + val * delta, low, high)
         return y
 
+    def tournament_selection(self, population, fronts, distances):
+        # Pick two random indices for the tournament.
+        i, j = self.rng.choice(len(population), size=2, replace=False)
+        
+        # Find which front each belongs to (lower index is better).
+        rank_i = next(r for r, front in enumerate(fronts) if i in front)
+        rank_j = next(r for r, front in enumerate(fronts) if j in front)
+        
+        if rank_i < rank_j:
+            return population[i]
+        elif rank_j < rank_i:
+            return population[j]
+        else:
+            # Same front, rely on crowding distance (higher is better).
+            if distances[i] > distances[j]:
+                return population[i]
+            else:
+                return population[j]
+
     def optimize(self):
         print("\n================ NSGA-II Optimization Started ================")
         population = self.initialize()
@@ -144,11 +163,21 @@ class NSGA2:
 
         for gen in range(self.generations):
             print(f"\nGeneration {gen+1}/{self.generations}")
-            # create offspring
+            
+            # Calculate fronts and crowding distance for the parent population.
+            current_fronts = self.non_dominated_sort(objectives)
+            current_distances = np.zeros(len(population))
+            for front in current_fronts:
+                if len(front) > 0:
+                    current_distances[front] = self.crowding_distance(front, objectives)
+
+            # Create offspring.
             offspring = []
             while len(offspring) < self.pop_size:
-                i1, i2 = self.rng.choice(len(population), size=2, replace=False)
-                p1, p2 = population[i1], population[i2]
+                # Use binary tournament selection.
+                p1 = self.tournament_selection(population, current_fronts, current_distances)
+                p2 = self.tournament_selection(population, current_fronts, current_distances)
+                
                 c1, c2 = self.crossover(p1, p2)
                 c1 = self.mutate(c1)
                 c2 = self.mutate(c2)
@@ -161,7 +190,7 @@ class NSGA2:
                 best_so_far = min(best_so_far, obj[0])
                 history.append(best_so_far)
 
-            # combine and select next generation
+            # Combine and select the next generation.
             combined = np.vstack((population, offspring))
             combined_objs = np.vstack((objectives, off_objs))
             fronts = self.non_dominated_sort(combined_objs)
@@ -185,7 +214,7 @@ class NSGA2:
 
             print(f"Gen {gen+1} complete — current best val_mse: {min(objectives[:,0]):.6f}")
 
-        # build pareto solutions
+        # Build Pareto solutions.
         fronts = self.non_dominated_sort(objectives)
         final_front = fronts[0]
         pareto = []

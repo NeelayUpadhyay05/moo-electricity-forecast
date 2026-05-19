@@ -18,13 +18,10 @@ from src.training.training_pipeline import (
 from src.config import Config
 
 
-# Suppress Optuna's verbose logging
+# Keep Optuna logging quiet during runs.
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 
-# ==========================================================
-# Result Saving
-# ==========================================================
 def save_results(out_dir, runtime, test_metrics, best_hyperparams, search_history, seed, mode):
     result = {
         "seed": seed,
@@ -42,9 +39,6 @@ def save_results(out_dir, runtime, test_metrics, best_hyperparams, search_histor
     print(f"Results saved to {out_dir}/metrics.json")
 
 
-# ==========================================================
-# Data Loading (Mode Aware)
-# ==========================================================
 def load_data(config, zone="PJME"):
 
     base = f"data/processed/{zone}"
@@ -64,9 +58,6 @@ def load_data(config, zone="PJME"):
     return train_df, val_df, test_df, scaling_params
 
 
-# ==========================================================
-# Optuna (TPE)
-# ==========================================================
 def run_optuna(train_df, val_df, test_df, scaling_params, device, config, seed=42, zone="PJME"):
 
     set_seed(seed)
@@ -87,7 +78,8 @@ def run_optuna(train_df, val_df, test_df, scaling_params, device, config, seed=4
         trial_config.num_layers = trial.suggest_int("num_layers", b["num_layers"][0], b["num_layers"][1])
         trial_config.lr = trial.suggest_float("lr", b["lr"][0], b["lr"][1], log=True)
         trial_config.dropout = trial.suggest_float("dropout", b["dropout"][0], b["dropout"][1])
-        trial_config.checkpoint_path = f"checkpoints/seed_{seed}/{zone}/optuna_trial_{trial.number}.pt"
+        # Reuse one temp checkpoint during the search phase.
+        trial_config.checkpoint_path = f"checkpoints/temp/optuna_search_temp.pt"
 
         os.makedirs(os.path.dirname(trial_config.checkpoint_path), exist_ok=True)
 
@@ -130,7 +122,7 @@ def run_optuna(train_df, val_df, test_df, scaling_params, device, config, seed=4
     study = optuna.create_study(direction="minimize", sampler=sampler)
     study.optimize(objective, n_trials=config.n_trials)
 
-    # Single-objective: choose best trial by validation MSE
+    # Single-objective: pick the best trial by validation MSE.
     best_trial = study.best_trial
     best_config = Config(mode=config.mode)
     best_config.hidden_dim = best_trial.params["hidden_dim"]
@@ -175,9 +167,6 @@ def run_optuna(train_df, val_df, test_df, scaling_params, device, config, seed=4
     return float(best_trial.value), test_metrics["rmse"], runtime
 
 
-# ==========================================================
-# Main
-# ==========================================================
 def main():
 
     parser = argparse.ArgumentParser()

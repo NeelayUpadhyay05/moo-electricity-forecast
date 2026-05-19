@@ -27,8 +27,8 @@ def _get_retrain_batch_size(config):
 
 
 def _get_search_lr(config):
-    # Prefer an explicit `lr` (e.g. sampled by HPO) when present.
-    # Fall back to `search_lr` (config default) and then a safe literal.
+    # Prefer an explicit lr (e.g., sampled by HPO); otherwise fall back to
+    # search_lr and then a safe literal.
     return getattr(config, "lr", getattr(config, "search_lr", 1e-3))
 
 
@@ -39,13 +39,11 @@ def _get_retrain_lr(config):
 
     search_batch_size = _get_search_batch_size(config)
     retrain_batch_size = _get_retrain_batch_size(config)
-    # Derive retrain LR from the (possibly sampled) search LR / lr.
+    # Derive retrain LR from the search LR and batch-size ratio.
     return _get_search_lr(config) * (retrain_batch_size / search_batch_size)
 
 
-# ==========================================================
-# Hyperparameter Search Phase (with Early Stopping)
-# ==========================================================
+# Hyperparameter search phase (with early stopping)
 def train_single_configuration(train_data, val_data, device, config):
     base_seed = getattr(config, "seed", 42)
 
@@ -96,7 +94,7 @@ def train_single_configuration(train_data, val_data, device, config):
 
     scaler = amp.GradScaler() if device.type == "cuda" else None
 
-    # Log effective search hyperparameters for reproducibility
+    # Log effective search hyperparameters for reproducibility.
     print(f"[Search] batch_size={_get_search_batch_size(config)} | lr={_get_search_lr(config)}")
 
     epoch_bar = tqdm(
@@ -127,9 +125,7 @@ def train_single_configuration(train_data, val_data, device, config):
     return early_stopper.best_loss
 
 
-# ==========================================================
-# Final Retraining Phase (NO Early Stopping)
-# ==========================================================
+# Final retraining phase (no early stopping)
 def retrain_and_evaluate(train_data, val_data, test_data,
                          device, config, scaling_params):
     base_seed = getattr(config, "seed", 42)
@@ -165,8 +161,8 @@ def retrain_and_evaluate(train_data, val_data, test_data,
         dropout=config.dropout,
     ).to(device)
 
-    # torch.compile speeds up the longer retrain run; skip on Windows where
-    # the Triton backend is unavailable and compilation adds pure overhead.
+    # torch.compile speeds up longer retrains; skip on Windows where Triton
+    # is unavailable and compilation adds overhead.
     if sys.platform != "win32" and hasattr(torch, "compile"):
         model = torch.compile(model)
 
@@ -180,7 +176,7 @@ def retrain_and_evaluate(train_data, val_data, test_data,
 
     scaler = amp.GradScaler() if device.type == "cuda" else None
 
-    # Log effective retrain hyperparameters for reproducibility
+    # Log effective retrain hyperparameters for reproducibility.
     print(f"[Retrain] batch_size={_get_retrain_batch_size(config)} | lr={_get_retrain_lr(config)}")
 
     print(f"\n[Final Retraining] epochs={config.retrain_epochs}")
@@ -210,10 +206,7 @@ def retrain_and_evaluate(train_data, val_data, test_data,
             {"train": f"{train_loss:.5f}", "val": f"{val_loss:.5f}", "best": f"{best_val_loss:.5f}"}
         )
 
-    # -------------------------
-    # Test Evaluation (build test windows from train+val+test to match other methods)
-    # -------------------------
-    # Use the same combined-window construction used by LightGBM/CNN/ARIMA
+    # Test evaluation: build windows from train+val+test to match other methods.
     combined_all = pd.concat([train_data, val_data, test_data])
     combined_vals = combined_all.values
     if combined_vals.ndim > 1:
@@ -232,7 +225,7 @@ def retrain_and_evaluate(train_data, val_data, test_data,
     X_test = X_all[start_idx : start_idx + len(test_data)]
     y_test = y_all[start_idx : start_idx + len(test_data)]
 
-    # Build DataLoader for test windows (add input feature dim)
+    # Build a DataLoader for test windows (add input feature dim).
     test_tensor = torch.utils.data.TensorDataset(
         torch.from_numpy(X_test).unsqueeze(-1), torch.from_numpy(y_test)
     )
@@ -258,8 +251,8 @@ def retrain_and_evaluate(train_data, val_data, test_data,
     with torch.no_grad():
         for x, y in test_loader:
             x = x.to(device)
-            outputs = model(x).cpu().numpy()   # (batch,) normalized predictions
-            targets = y.numpy()                # (batch,) normalized targets
+            outputs = model(x).cpu().numpy()   # normalized predictions, shape (batch,)
+            targets = y.numpy()                # normalized targets, shape (batch,)
 
             all_predictions.append(outputs)
             all_targets_normalized.append(targets)
@@ -267,18 +260,18 @@ def retrain_and_evaluate(train_data, val_data, test_data,
     pred_norm = np.concatenate(all_predictions)
     targ_norm = np.concatenate(all_targets_normalized)
 
-    # Convert back to original MW scale for RMSE/MAE/MAPE
-    pred_orig = pred_norm * std + mean
-    targ_orig = targ_norm * std + mean
-
-    # Calculate metrics (RMSE/MAE/MAPE in MW; R2 on normalized values)
-    rmse = float(np.sqrt(np.mean((pred_orig - targ_orig) ** 2)))
-    mae = float(np.mean(np.abs(pred_orig - targ_orig)))
-    mape = float(np.mean(np.abs(pred_orig - targ_orig) / np.clip(np.abs(targ_orig), 1.0, None)) * 100)
+    # Calculate metrics on normalized values to avoid data leakage.
+    rmse = float(np.sqrt(np.mean((pred_norm - targ_norm) ** 2)))
+    mae = float(np.mean(np.abs(pred_norm - targ_norm)))
+    
+    # Epsilon clipping prevents division by zero on normalized data.
+    epsilon = 1e-8
+    mape = float(np.mean(np.abs(pred_norm - targ_norm) / np.clip(np.abs(targ_norm), epsilon, None)) * 100)
+    
     r2 = calculate_r2(pred_norm, targ_norm)
 
     print(
-        f"[Final Test]  RMSE: {rmse:.4f} MW  MAE: {mae:.4f} MW  MAPE: {mape:.2f}%  R2: {r2:.4f}"
+        f"[Final Test]  RMSE: {rmse:.4f} (Norm)  MAE: {mae:.4f} (Norm)  MAPE: {mape:.2f}% (Norm)  R2: {r2:.4f}"
     )
     print(f"Model saved to: {config.checkpoint_path}")
 

@@ -36,27 +36,20 @@ def run_arima(train_df, val_df, test_df, scaling_params, config, seed=42, zone="
     mean = scaling_params["mean"]
     std = scaling_params["std"]
     
-    # Train only on training data (consistent with LSTM search phase fairness)
+    # Train only on the training split to keep search settings comparable.
     train_vals = train_df.iloc[:, 0].values
     test_vals = test_df.iloc[:, 0].values
 
     fitted = fit_arima(train_vals, order=config.arima_order)
     preds = forecast_arima(fitted, steps=len(test_vals))
 
-    # Compute metrics
-    # `preds` and `test_vals` are normalized; convert back to MW for
-    # RMSE/MAE/MAPE so results are directly comparable to LSTM reporting.
-    preds_orig = preds * std + mean
-    test_orig = test_vals * std + mean
-
-    rmse = calculate_rmse(preds_orig, test_orig)
-    mae = calculate_mae(preds_orig, test_orig)
-    mape = calculate_mape(preds_orig, test_orig)
-
-    # R2 on normalized values
-    preds_norm = preds
-    test_norm = test_vals
-    r2 = calculate_r2(preds_norm, test_norm)
+    # Evaluate on normalized values to match the training scale.
+    rmse = calculate_rmse(preds, test_vals)
+    mae = calculate_mae(preds, test_vals)
+    
+    epsilon = 1e-8
+    mape = float(np.mean(np.abs(preds - test_vals) / np.clip(np.abs(test_vals), epsilon, None)) * 100)
+    r2 = calculate_r2(preds, test_vals)
 
     runtime = time.time() - start
 
