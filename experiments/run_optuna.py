@@ -148,6 +148,13 @@ def run_optuna(train_df, val_df, test_df, scaling_params, device, config, seed=4
         os.path.join(out_dir, "search_history.csv"), index=False
     )
 
+    best_model = LSTMModel(
+        input_dim=1,
+        hidden_dim=best_config.hidden_dim,
+        num_layers=best_config.num_layers,
+        dropout=best_config.dropout
+    )
+
     save_results(
         out_dir=out_dir,
         runtime=runtime,
@@ -157,6 +164,7 @@ def run_optuna(train_df, val_df, test_df, scaling_params, device, config, seed=4
             "num_layers": best_config.num_layers,
             "lr": best_config.lr,
             "dropout": best_config.dropout,
+            "complexity": count_parameters(best_model),
         },
         seed=seed,
         mode=config.mode,
