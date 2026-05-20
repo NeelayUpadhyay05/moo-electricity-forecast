@@ -95,6 +95,7 @@ def run_baseline(train_df, val_df, test_df, scaling_params, device, config, seed
             "search_lr": base_config.search_lr,
             "retrain_lr": base_config.search_lr * (base_config.retrain_batch_size / base_config.search_batch_size),
             "dropout": 0.0,
+            "complexity": 67201,
         },
         seed=seed,
         mode=config.mode,

@@ -115,6 +115,7 @@ def run_cnn_lstm(train_df, val_df, test_df, scaling_params, device, config, seed
             "hidden_dim": config.hidden_dim,
             "num_layers": config.num_layers,
             "dropout": config.dropout,
+            "complexity": 21121,
         },
     }
     with open(os.path.join(out_dir, "metrics.json"), "w") as f:
