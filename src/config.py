@@ -54,20 +54,20 @@ class Config:
         if mode == "full":
             self.fair_budget_evals = 200
             self.n_trials        = self.fair_budget_evals
-            self.moo_pop_size    = 10
-            self.moo_generations = (self.fair_budget_evals - self.moo_pop_size) // self.moo_pop_size
+            self.multi_objective_pop_size    = 10
+            self.multi_objective_generations = (self.fair_budget_evals - self.multi_objective_pop_size) // self.multi_objective_pop_size
             # Sanity check: 10 init + (10 * 19) offspring = 200 total evals
-            assert self.moo_pop_size * (1 + self.moo_generations) == self.fair_budget_evals, \
-                f"MOO budget mismatch: {self.moo_pop_size * (1 + self.moo_generations)} != {self.fair_budget_evals}"
+            assert self.multi_objective_pop_size * (1 + self.multi_objective_generations) == self.fair_budget_evals, \
+                f"MOO budget mismatch: {self.multi_objective_pop_size * (1 + self.multi_objective_generations)} != {self.fair_budget_evals}"
         else:
             # Dev mode stays lightweight for iteration speed.
             self.fair_budget_evals = 12
             self.n_trials        = 12
-            self.moo_pop_size    = 4
-            self.moo_generations = (self.fair_budget_evals - self.moo_pop_size) // self.moo_pop_size
+            self.multi_objective_pop_size    = 4
+            self.multi_objective_generations = (self.fair_budget_evals - self.multi_objective_pop_size) // self.multi_objective_pop_size
             # Sanity check: 4 init + (4 * 2) offspring = 12 total evals
-            assert self.moo_pop_size * (1 + self.moo_generations) == self.fair_budget_evals, \
-                f"MOO budget mismatch (dev): {self.moo_pop_size * (1 + self.moo_generations)} != {self.fair_budget_evals}"
+            assert self.multi_objective_pop_size * (1 + self.multi_objective_generations) == self.fair_budget_evals, \
+                f"MOO budget mismatch (dev): {self.multi_objective_pop_size * (1 + self.multi_objective_generations)} != {self.fair_budget_evals}"
 
         # Fixed hyperparameters for non-HPO methods
         self.arima_order = (5, 1, 0)  # ARIMA (p, d, q) order

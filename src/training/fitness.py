@@ -5,20 +5,20 @@ from src.models.lstm import LSTMModel, count_parameters
 from src.training.training_pipeline import train_single_configuration
 
 
-def decode_particle_to_config(particle, mode):
+def decode_candidate_to_config(candidate, mode, checkpoint_path=None):
 
     config = Config(mode=mode)
     b = config.hp_bounds
 
-    config.hidden_dim = int(np.clip(np.round(particle[0]), b["hidden_dim"][0], b["hidden_dim"][1]))
-    config.num_layers = int(np.clip(np.round(particle[1]), b["num_layers"][0], b["num_layers"][1]))
-    config.lr = float(np.clip(10 ** particle[2], b["lr"][0], b["lr"][1]))
-    config.dropout = float(np.clip(particle[3], b["dropout"][0], b["dropout"][1]))
+    config.hidden_dim = int(np.clip(np.round(candidate[0]), b["hidden_dim"][0], b["hidden_dim"][1]))
+    config.num_layers = int(np.clip(np.round(candidate[1]), b["num_layers"][0], b["num_layers"][1]))
+    config.lr = float(np.clip(10 ** candidate[2], b["lr"][0], b["lr"][1]))
+    config.dropout = float(np.clip(candidate[3], b["dropout"][0], b["dropout"][1]))
 
-    # Reuse one temp checkpoint during the search phase.
-    config.checkpoint_path = os.path.join("checkpoints", "temp", "moo_search_temp.pt")
-    # Propagate the experiment seed so DataLoader workers stay consistent
-    # during HPO evaluations.
+    if checkpoint_path is None:    
+        checkpoint_path = os.path.join("checkpoints", "temp", "moo_search_temp.pt")
+    config.checkpoint_path = checkpoint_path
+    # Propagate the experiment seed so DataLoader workers stay consistent during HPO evaluations.
     try:
         config.seed = int(os.environ.get("EXPERIMENT_SEED", 42))
     except Exception:
@@ -27,9 +27,9 @@ def decode_particle_to_config(particle, mode):
     return config
 
 
-def evaluate_multi_objective(particle, train_df, val_df, device, mode, log_prefix="Candidate"):
+def evaluate_multi_objective(candidate, train_df, val_df, device, mode, log_prefix="Candidate", checkpoint_path=None):
 
-    config = decode_particle_to_config(particle, mode)
+    config = decode_candidate_to_config(candidate, mode, checkpoint_path=checkpoint_path)
 
     print("\n" + "=" * 50)
     print(f"Evaluating {log_prefix}")
@@ -61,27 +61,15 @@ def evaluate_multi_objective(particle, train_df, val_df, device, mode, log_prefi
     return float(val_mse), int(n_params)
 
 
-# PSO fitness (multi-objective)
+# Multi-Objective fitness
 
-def pso_fitness(particle, train_df, val_df, device, mode):
+def multi_objective_fitness(candidate, train_df, val_df, device, mode, log_prefix="Candidate", checkpoint_path=None):
     return evaluate_multi_objective(
-        particle,
+        candidate,
         train_df,
         val_df,
         device,
         mode,
-        log_prefix="PSO Particle",
-    )
-
-
-# MOO fitness (multi-objective)
-
-def moo_fitness(particle, train_df, val_df, device, mode):
-    return evaluate_multi_objective(
-        particle,
-        train_df,
-        val_df,
-        device,
-        mode,
-        log_prefix="MOO Candidate",
+        log_prefix=log_prefix,
+        checkpoint_path=checkpoint_path
     )

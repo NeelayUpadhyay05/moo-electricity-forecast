@@ -74,7 +74,7 @@ def run_random_search(train_df, val_df, test_df, scaling_params, device, config,
 
     for trial in range(config.n_trials):
 
-        print(f"\n########## Trial {trial+1}/{config.n_trials} ##########")
+        print(f"\n########## Random Search Trial {trial+1}/{config.n_trials} ##########")
 
         trial_config = Config(mode=config.mode)
         trial_config.seed = seed

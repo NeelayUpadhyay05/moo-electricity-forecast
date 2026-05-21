@@ -15,7 +15,7 @@ from src.training.training_pipeline import (
     retrain_and_evaluate
 )
 from src.optimizers.nsga2 import NSGA2
-from src.training.fitness import moo_fitness
+from src.training.fitness import multi_objective_fitness
 from src.metrics import calculate_hypervolume, calculate_igd
 from src.config import Config
 
@@ -76,12 +76,12 @@ def run_nsga2(train_df, val_df, test_df, scaling_params, device, config, seed=42
     ]
 
     nsga = NSGA2(
-        fitness_fn=lambda particle: moo_fitness(
-            particle, train_df, val_df, device, mode=config.mode
+        fitness_fn=lambda candidate: multi_objective_fitness(
+            candidate, train_df, val_df, device, mode=config.mode, log_prefix="NSGA-II Candidate", checkpoint_path="checkpoints/temp/nsga2_temp.pt"
         ),
         bounds=bounds,
-        pop_size=config.moo_pop_size,
-        generations=config.moo_generations,
+        pop_size=config.multi_objective_pop_size,
+        generations=config.multi_objective_generations,
         seed=seed,
     )
 
