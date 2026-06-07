@@ -33,7 +33,7 @@ Single-objective and direct methods:
 
 ## Preprocessing
 
-The new preprocessing entry point is:
+The preprocessing entry point is:
 
 ```bash
 python src/data/run_preprocess_all_selected.py
@@ -57,12 +57,11 @@ The preprocessing pipeline is chronological and leakage-safe:
 
 Open `notebooks/analysis.ipynb` for the main paper analysis.
 
-The notebook is set up to do the following:
-- Friedman test across the 6 regions, treating regions as blocks and methods as treatments
-- Nemenyi post-hoc test when Friedman is significant
-- Wilcoxon rank-sum pairwise tests for MO-LSTM vs each baseline across seed runs
-- Holm-Bonferroni correction for the 7 pairwise Wilcoxon comparisons
-- Pareto dominance checks and knee-point selection for the multi-objective methods
+The notebook is structured to run a rigorous statistical validation pipeline:
+- **Global Non-Parametric Ranking:** Friedman test across 60 complete blocks (6 geographic zones × 10 independent seeds) to evaluate overall rank variance among the forecasting methods.
+- **Post-Hoc Convergence Verification:** Nemenyi post-hoc test to compute the Critical Difference (CD) and map pairwise rank significance when the Friedman test successfully rejects the null hypothesis.
+- **Multi-Dimensional Pairwise Superiority:** One-sided Mann-Whitney U (Wilcoxon rank-sum) tests evaluated across three distinct performance axes: error minimization (MAPE), structural economy (Trainable Parameters), and Pareto front optimization (Hypervolume).
+- **Multi-Objective Trade-Off Selection:** Mathematical extraction of the optimal representative configuration from the Pareto front using Utopia Point Selection (minimizing Euclidean distance to the normalized ideal origin $(0,0)$).
 
 ## Running experiments
 
