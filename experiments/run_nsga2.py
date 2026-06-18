@@ -106,7 +106,19 @@ def run_nsga2(train_df, val_df, test_df, scaling_params, device, config, seed=42
             "hyperparams": hyperparams,
         })
 
-    best_val_solution = min(evaluated, key=lambda x: x["val_mse"])
+    # Pick the Pareto solution closest to the Utopia Point (0,0) in normalized space
+    mse_vals = [e["val_mse"] for e in evaluated]
+    comp_vals = [e["complexity"] for e in evaluated]
+
+    mse_min, mse_max = min(mse_vals), max(mse_vals)
+    comp_min, comp_max = min(comp_vals), max(comp_vals)
+
+    def get_utopia_dist(e):
+        norm_mse = (e["val_mse"] - mse_min) / (mse_max - mse_min + 1e-9)
+        norm_comp = (e["complexity"] - comp_min) / (comp_max - comp_min + 1e-9)
+        return (norm_mse**2 + norm_comp**2)**0.5
+
+    best_val_solution = min(evaluated, key=get_utopia_dist)
     best_hp = best_val_solution["hyperparams"]
 
     best_config = Config(mode=config.mode)
